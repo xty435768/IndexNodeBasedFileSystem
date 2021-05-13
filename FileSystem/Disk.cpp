@@ -3,17 +3,6 @@
 using namespace std;
 #pragma warning(disable:4996)
 
-// measured in "BYTES" 
-#define INITIAL_DISK_SIZE  16 * 1024 * 1024
-#define INITIAL_BLOCK_SIZE  1 * 1024
-#define INITIAL_SUPERBLOCK_SIZE  1 * 1024
-#define INITIAL_BITMAP_SIZE  2 * 1024
-#define INITIAL_INODE_NUMBER  61
-#define INITIAL_DATA_BLOCK_NUMBER 2040 * 8
-// measured in "BITS"
-#define BITMAP_RESERVE_BITS 3
-
-const char magic_number[] = "tyhrhsfs";
 
 int fileSeek(FILE* stream, long offSet, int fromWhere)
 {
@@ -111,6 +100,7 @@ bool Disk::initializeDiskFile()
 			return false;
 		}
 		diskFile = file;
+		delete[] magic_number_test;
 		return true;
 	}
 	else
@@ -146,4 +136,53 @@ bool Disk::initializeDiskFile()
 superNode::superNode()
 {
 
+}
+
+
+Distblock::Distblock(int addrInt)
+{
+	load(addrInt);
+}
+
+Distblock::Distblock(Address addr)
+{
+	load(addr);
+}
+
+void Distblock::load(int addrInt)
+{
+	FILE* file = fileOpen(DISK_PATH, "rb+");
+	fileSeek(file, addrInt, SEEK_SET);
+	fileRead(content, sizeof content, 1, file);
+	fclose(file);
+}
+
+void Distblock::load(Address addr)
+{
+	int addrInt = addr.to_int();
+	load(addrInt);
+}
+
+void Distblock::write(int addrInt)
+{
+	FILE* file = fileOpen(DISK_PATH, "rb+");
+	fileSeek(file, addrInt, SEEK_SET);
+	fileWrite(content, sizeof content, 1, file);
+	fclose(file);
+}
+
+void Distblock::write(Address addr)
+{
+	int addrInt = addr.to_int();
+	write(addrInt);
+}
+
+void IndirectDiskblock::load(Address a)
+{
+	int addrInt = a.to_int();
+	FILE* file = fileOpen(DISK_PATH, "rb+");
+	memset(addr, 0 sizeof addr);
+	fileSeek(file, addrInt, SEEK_SET);
+	fileRead(addr, 3, NUM_INDIRECT_ADDRESSES, file);
+	fclose(file);
 }
