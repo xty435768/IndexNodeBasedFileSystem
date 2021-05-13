@@ -139,17 +139,17 @@ superNode::superNode()
 }
 
 
-Distblock::Distblock(int addrInt)
+Diskblock::Diskblock(int addrInt)
 {
 	load(addrInt);
 }
 
-Distblock::Distblock(Address addr)
+Diskblock::Diskblock(Address addr)
 {
 	load(addr);
 }
 
-void Distblock::load(int addrInt)
+void Diskblock::load(int addrInt)
 {
 	FILE* file = fileOpen(DISK_PATH, "rb+");
 	fileSeek(file, addrInt, SEEK_SET);
@@ -157,13 +157,13 @@ void Distblock::load(int addrInt)
 	fclose(file);
 }
 
-void Distblock::load(Address addr)
+void Diskblock::load(Address addr)
 {
 	int addrInt = addr.to_int();
 	load(addrInt);
 }
 
-void Distblock::write(int addrInt)
+void Diskblock::write(int addrInt)
 {
 	FILE* file = fileOpen(DISK_PATH, "rb+");
 	fileSeek(file, addrInt, SEEK_SET);
@@ -171,7 +171,7 @@ void Distblock::write(int addrInt)
 	fclose(file);
 }
 
-void Distblock::write(Address addr)
+void Diskblock::write(Address addr)
 {
 	int addrInt = addr.to_int();
 	write(addrInt);
@@ -181,8 +181,13 @@ void IndirectDiskblock::load(Address a)
 {
 	int addrInt = a.to_int();
 	FILE* file = fileOpen(DISK_PATH, "rb+");
-	memset(addr, 0 sizeof addr);
+	memset(addr, 0, sizeof(addr));
 	fileSeek(file, addrInt, SEEK_SET);
 	fileRead(addr, 3, NUM_INDIRECT_ADDRESSES, file);
 	fclose(file);
+}
+
+iNode::iNode()
+{
+
 }

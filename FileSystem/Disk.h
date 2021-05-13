@@ -11,10 +11,14 @@
 #define INITIAL_BITMAP_SIZE  2 * 1024
 #define INITIAL_INODE_NUMBER  61
 #define INITIAL_DATA_BLOCK_NUMBER 2040 * 8
-#define DISK_PATH "dist.dat"
+#define DISK_PATH "disk.dat"
 #define NUM_INDIRECT_ADDRESSES 341
 // measured in "BITS"
 #define BITMAP_RESERVE_BITS 3
+// others
+#define MAXIMUM_ABSOLUTE_FILENAME_LENGTH 768
+#define MAXIMUM_FILE_PER_DIRECTORY 512
+#define MAXIMUM_FILENAME_LENGTH 16
 
 int fileSeek(FILE* stream, long offSet, int fromWhere);
 FILE* fileOpen(const char* name, const char* mode);
@@ -45,16 +49,16 @@ struct Address
 	}
 };
 
-class Distblock {  // can get the content from or write the content to a specific disk block
+class Diskblock {  // can get the content from or write the content to a specific disk block
 public:
 	unsigned char content[1024];
-	Distblock() {
+	Diskblock() {
 		memset(content, 0, sizeof content);
 	}
-	Distblock(int addrInt); 
-	Distblock(Address addr); 
-	void load(int addrInt);// load a block from dist given an address to the content buffer
-	void load(Address addr);// load a block from dist given an address to the content buffer
+	Diskblock(int addrInt); 
+	Diskblock(Address addr); 
+	void load(int addrInt);// load a block from disk given an address to the content buffer
+	void load(Address addr);// load a block from disk given an address to the content buffer
 	void write(int addrInt);  // write the content buffer to the specific disk block
 	void write(Address addr);  // write the content buffer to the specific disk block
 
@@ -99,15 +103,20 @@ public:
 class iNode
 {
 public:
-	unsigned short inode_id;
-	unsigned short inode_link_count;
-	unsigned int inode_size;
+	unsigned fileSize;
+	unsigned dirSize;
+	char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
 	time_t inode_change_time;
 	time_t inode_access_time;
 	time_t inode_modify_time;
+
+	int parent;
+	int inode_id;
+
 	int direct[10];
 	int indirect;
 
+	iNode();
 private:
 
 };
@@ -140,4 +149,13 @@ public:
 	void initialize();  // initialize when the disk is created
 	Address alloc();  // allocate a free block and return the free block address
 	void free(Address addr);  // recycle the unused block and push it to the stack
+};
+
+class Directory {
+	struct file{
+		char fileName[MAXIMUM_FILENAME_LENGTH];
+		short inode_id;
+	} files[MAXIMUM_FILE_PER_DIRECTORY];
+	unsigned fileCount;
+	unsigned blockIndex;
 };
