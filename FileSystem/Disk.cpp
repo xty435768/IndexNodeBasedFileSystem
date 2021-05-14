@@ -123,10 +123,12 @@ bool Disk::initializeDiskFile()
 		super.INODE_SIZE = INITIAL_BLOCK_SIZE;
 		super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE - sizeof(magic_number) + 1;
 		super.superBlockStart = sizeof(magic_number) - 1;
-		super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
-		super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
-		super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
-		super.blockStart = super.inodeStart + super.inodeNumber * super.BLOCK_SIZE;
+		//super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
+		//super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
+		//super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
+		
+		super.inodeStart = INITIAL_SUPERBLOCK_SIZE / INITIAL_BLOCK_SIZE;
+		super.blockStart = super.inodeStart + super.inodeNumber * INITIAL_INODE_SIZE;
 		if (fileSeek(file, sizeof(magic_number) - 1, SEEK_SET)) return false;
 		if (fileWrite(&super, sizeof(superNode), 1, file) != 1) return false;
 		return true;

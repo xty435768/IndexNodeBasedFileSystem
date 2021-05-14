@@ -2,23 +2,28 @@
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 #pragma warning(disable:4996)
 
 // measured in "BYTES" 
 #define INITIAL_DISK_SIZE  16 * 1024 * 1024
 #define INITIAL_BLOCK_SIZE  1 * 1024
 #define INITIAL_SUPERBLOCK_SIZE  1 * 1024
-#define INITIAL_BITMAP_SIZE  2 * 1024
-#define INITIAL_INODE_NUMBER  61
+// #define INITIAL_BITMAP_SIZE  2 * 1024
+#define INITIAL_INODE_NUMBER  4096
 #define INITIAL_DATA_BLOCK_NUMBER 2040 * 8
 #define DISK_PATH "disk.dat"
 #define NUM_INDIRECT_ADDRESSES 341
+#define INITIAL_INODE_SIZE 128
 // measured in "BITS"
-#define BITMAP_RESERVE_BITS 3
+// #define BITMAP_RESERVE_BITS 3
 // others
 #define MAXIMUM_ABSOLUTE_FILENAME_LENGTH 768
-#define MAXIMUM_FILE_PER_DIRECTORY 512
-#define MAXIMUM_FILENAME_LENGTH 16
+// #define MAXIMUM_FILE_PER_DIRECTORY 128
+#define MAXIMUM_FILENAME_LENGTH 64
+#define DIRECT_ADDRESS_NUMBER 10
+// measured in "BYTES" 
+#define MAXIMUM_FILE_SIZE DIRECT_ADDRESS_NUMBER * INITIAL_BLOCK_SIZE + 1 * NUM_INDIRECT_ADDRESSES * INITIAL_BLOCK_SIZE
 
 int fileSeek(FILE* stream, long offSet, int fromWhere);
 FILE* fileOpen(const char* name, const char* mode);
@@ -105,7 +110,7 @@ class iNode
 public:
 	unsigned fileSize;
 	unsigned dirSize;
-	char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
+	//char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
 	time_t inode_change_time;
 	time_t inode_access_time;
 	time_t inode_modify_time;
@@ -113,7 +118,7 @@ public:
 	int parent;
 	int inode_id;
 
-	int direct[10];
+	int direct[DIRECT_ADDRESS_NUMBER];
 	int indirect;
 
 	iNode();
@@ -150,12 +155,14 @@ public:
 	Address alloc();  // allocate a free block and return the free block address
 	void free(Address addr);  // recycle the unused block and push it to the stack
 };
+struct file {
+	char fileName[MAXIMUM_FILENAME_LENGTH];
+	short inode_id;
+};
 
-class Directory {
-	struct file{
-		char fileName[MAXIMUM_FILENAME_LENGTH];
-		short inode_id;
-	} files[MAXIMUM_FILE_PER_DIRECTORY];
+struct Directory {
+	std::vector<file> files;
 	unsigned fileCount;
 	unsigned blockIndex;
+
 };
