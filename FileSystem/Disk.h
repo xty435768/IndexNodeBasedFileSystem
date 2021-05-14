@@ -8,10 +8,12 @@
 // measured in "BYTES" 
 #define INITIAL_DISK_SIZE  16 * 1024 * 1024
 #define INITIAL_BLOCK_SIZE  1 * 1024
+#define INITIAL_BLOCK_NUM  1024
 #define INITIAL_SUPERBLOCK_SIZE  1 * 1024
 // #define INITIAL_BITMAP_SIZE  2 * 1024
 #define INITIAL_INODE_NUMBER  4096
 #define INITIAL_DATA_BLOCK_NUMBER 2040 * 8
+#define INITLAL_FREEPTR  16541362
 #define DISK_PATH "disk.dat"
 #define NUM_INDIRECT_ADDRESSES 341
 #define INITIAL_INODE_SIZE 128
@@ -42,7 +44,7 @@ struct Address
 	Address(int addrInt) {
 		from_int(addrInt);
 	}
-	int to_int() {
+	int to_int() const {
 		return (int)addr[0] * 1 + (int)addr[1] * 256 + (int)addr[2] * 256 * 256;
 	}
 	void from_int(int addrInt) {
@@ -51,6 +53,36 @@ struct Address
 		addr[1] = addrInt % 256;
 		addrInt /= 256;
 		addr[2] = addrInt % 256;
+	}
+	Address block_addr() {
+		return Address((this->to_int() / 1024) << 10);
+	}
+	Address offset() {
+		return Address(this->to_int() % 1024);
+	}
+	Address operator+(const Address& a) {
+		return Address(this->to_int() + a.to_int());
+	}
+	Address operator+(const int& a) {
+		return Address(this->to_int() + a);
+	}
+	Address operator-(const Address& a) {
+		return Address(this->to_int() - a.to_int());
+	}
+	Address operator-(const int& a) {
+		return Address(this->to_int() - a);
+	}
+	bool operator==(const Address& a) {
+		return this->to_int() == a.to_int();
+	}
+	bool operator==(const int& a) {
+		return this->to_int() == a;
+	}
+	bool operator!=(const Address& a) {
+		return !(*this == a);
+	}
+	bool operator!=(const int& a) {
+		return !(*this == a);
 	}
 };
 
@@ -71,9 +103,10 @@ public:
 
 class IndirectDiskblock {
 public:
-	Address addr[NUM_INDIRECT_ADDRESSES];  // addresses loaded from an indirect disk block
+	Address addrs[NUM_INDIRECT_ADDRESSES];  // addresses loaded from an indirect disk block
 	int numAddress; // number of valid addresses since not all the 341 addr are used
-	void load(Address a);  //load addresses given an indirect block address
+	void load(Address blockAddr);  //load addresses given an indirect block address
+	void write(Address blockAddr);  //write the pointers to the specific block
 };
 
 class superNode
@@ -131,7 +164,7 @@ class Disk
 public:
 	Disk();
 	~Disk();
-	FILE* diskFile;
+	//FILE* diskFile;
 	//get superNodeStart
 	//get inode bitmap start
 	//get inode block start
@@ -149,11 +182,13 @@ private:
 
 class DiskblockManager {
 private:
-	Address freeptr;
+	
 public:
+	Address freeptr;
 	void initialize();  // initialize when the disk is created
 	Address alloc();  // allocate a free block and return the free block address
 	void free(Address addr);  // recycle the unused block and push it to the stack
+	void printBlockUsage();
 };
 struct file {
 	char fileName[MAXIMUM_FILENAME_LENGTH];
