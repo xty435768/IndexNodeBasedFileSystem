@@ -99,8 +99,9 @@ bool Disk::initializeDiskFile()
 			fclose(file);
 			return false;
 		}
-		diskFile = file;
+		//diskFile = file;
 		delete[] magic_number_test;
+		fclose(file);
 		return true;
 	}
 	else
@@ -181,13 +182,107 @@ void IndirectDiskblock::load(Address a)
 {
 	int addrInt = a.to_int();
 	FILE* file = fileOpen(DISK_PATH, "rb+");
-	memset(addr, 0, sizeof(addr));
+	memset(addrs, 0, sizeof(addrs));
 	fileSeek(file, addrInt, SEEK_SET);
-	fileRead(addr, 3, NUM_INDIRECT_ADDRESSES, file);
+	fileRead(addrs, 3, NUM_INDIRECT_ADDRESSES, file);
+	fclose(file);
+}
+
+void IndirectDiskblock::write(Address blockAddr)  // still untested
+{
+	int addrInt = blockAddr.to_int();
+	FILE* file = fileOpen(DISK_PATH, "rb+");
+	fileSeek(file, addrInt, SEEK_SET);
+	fileWrite(addrs, sizeof addrs, 1, file);
 	fclose(file);
 }
 
 iNode::iNode()
 {
 
+}
+
+void DiskblockManager::initialize()
+{
+	freeptr = 513 << 10;
+	IndirectDiskblock iblock;
+	iblock.load(Address(513 << 10));
+	iblock.addrs[0] = freeptr;
+	iblock.write(Address(513 << 10));
+	for (int i = 514; i < 16384; i++) {
+		Address freeAddr = i << 10;
+		free(freeAddr);
+	}
+}
+
+Address DiskblockManager::alloc()
+{
+	// load the current linked-list block
+	IndirectDiskblock iblock;
+	Address blockAddr = freeptr.block_addr();
+	iblock.load(blockAddr);
+
+	// no free blocks
+	if (freeptr.offset().to_int() == 0) {
+		perror("out of disk memory");
+		exit(1);
+	}
+	Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
+	iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
+	if (freeptr.offset().to_int() == 3) {
+		freeptr = iblock.addrs[0] + (NUM_INDIRECT_ADDRESSES - 1) * 3;
+		memset(iblock.addrs, 0, sizeof iblock.addrs);
+		iblock.write(blockAddr);
+	}
+	else {
+		iblock.write(blockAddr);
+		freeptr = freeptr - 3;
+	}
+	return freeAddr;
+}
+
+void DiskblockManager::free(Address freeAddr)  // addr is the freed or afterused block address
+{
+	// load the current linked-list block
+	IndirectDiskblock iblock;
+	Address blockAddr = freeptr.block_addr();
+	iblock.load(blockAddr);  
+
+	// if free pointer not points to the last address in the block
+	if (freeptr.offset().to_int() != (NUM_INDIRECT_ADDRESSES - 1) * 3) {
+		freeptr = freeptr + 3;
+		iblock.addrs[freeptr.offset().to_int() / 3] = freeAddr;
+		iblock.write(blockAddr);
+	}
+	else {
+		Address newNodeAddr = iblock.addrs[NUM_INDIRECT_ADDRESSES - 1];  // get the last free-address in the block.
+		cout << "new linked-list block" << newNodeAddr.to_int() << endl;
+		iblock.load(newNodeAddr);  
+		memset(iblock.addrs, 0, sizeof iblock.addrs);
+		iblock.addrs[0] = blockAddr;
+		iblock.addrs[1] = freeAddr;
+		freeptr.from_int(newNodeAddr.to_int() + 3);
+		iblock.write(newNodeAddr);
+	}
+}
+
+void DiskblockManager::printBlockUsage()
+{
+	int freeBlock = 0, linkedListBlock= 0;
+	Address ptr = freeptr.block_addr();
+	IndirectDiskblock iblock;
+	iblock.load(ptr);
+	do
+	{
+		linkedListBlock += 1;
+		ptr = iblock.addrs[0];
+		iblock.load(ptr);
+	} while (ptr != iblock.addrs[0]);
+	linkedListBlock += 1;
+	freeBlock = (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;
+	cout << "free block: " << freeBlock << endl;
+	cout << "blocks for linked list: " << linkedListBlock << endl;
+	cout << "blocks used for data: " << 16384 - 513 - freeBlock - linkedListBlock << endl;
+	cout << "blocks used for Inodes: " << 512 << endl;
+	cout << "blocks used for superblock: " << 1 << endl;
 }
