@@ -27,10 +27,10 @@
 // measured in "BYTES" 
 #define MAXIMUM_FILE_SIZE DIRECT_ADDRESS_NUMBER * INITIAL_BLOCK_SIZE + 1 * NUM_INDIRECT_ADDRESSES * INITIAL_BLOCK_SIZE
 
-int fileSeek(FILE* stream, long offSet, int fromWhere);
-FILE* fileOpen(const char* name, const char* mode);
-size_t fileRead(void* buffer, size_t elementSize, size_t elementCount, FILE* file);
-size_t fileWrite(const void* buffer, size_t elementSize, size_t elementCount, FILE* file);
+int fileSeek(FILE* stream, long offSet, int fromWhere, bool error_close_require = false);
+FILE* fileOpen(const char* name, const char* mode, bool error_close_require = false);
+size_t fileRead(void* buffer, size_t elementSize, size_t elementCount, FILE* file, bool error_close_require = false);
+size_t fileWrite(const void* buffer, size_t elementSize, size_t elementCount, FILE* file, bool error_close_require = false);
 int filePutCharacter(int character, FILE* file);
 
 const char magic_number[] = "tyhrhsfs";
@@ -105,8 +105,8 @@ class IndirectDiskblock {
 public:
 	Address addrs[NUM_INDIRECT_ADDRESSES];  // addresses loaded from an indirect disk block
 	int numAddress; // number of valid addresses since not all the 341 addr are used
-	void load(Address blockAddr);  //load addresses given an indirect block address
-	void write(Address blockAddr);  //write the pointers to the specific block
+	void load(Address blockAddr,FILE* =NULL);  //load addresses given an indirect block address
+	void write(Address blockAddr,FILE* =NULL);  //write the pointers to the specific block
 };
 
 class superNode
@@ -122,6 +122,7 @@ public:
 	unsigned BLOCK_SIZE;
 	unsigned INODE_SIZE;
 	unsigned SUPERBLOCK_SIZE;
+	unsigned TOTAL_SIZE;
 	
 	int free_block_SP;					// free block stack pointer
 	int *free_block;					// free block stack
@@ -159,12 +160,34 @@ private:
 
 };
 
+class DiskblockManager {
+private:
+	
+public:
+	Address freeptr;
+	void initialize(superNode*,FILE* =NULL);  // initialize when the disk is created
+	Address alloc();  // allocate a free block and return the free block address
+	void free(Address addr,FILE* =NULL);  // recycle the unused block and push it to the stack
+	void printBlockUsage(superNode*, FILE* =NULL);
+};
+struct fileEntry {
+	char fileName[MAXIMUM_FILENAME_LENGTH];
+	short inode_id;
+};
+
+struct Directory {
+	std::vector<fileEntry> files;
+	unsigned fileCount;
+	unsigned blockIndex;
+
+};
+
 class Disk
 {
 public:
 	Disk();
 	~Disk();
-	//FILE* diskFile;
+	FILE* diskFile;
 	//get superNodeStart
 	//get inode bitmap start
 	//get inode block start
@@ -172,32 +195,10 @@ public:
 	//get data block start
 
 	void run();
-	void loadDisk();
-	bool initializeDiskFile();
+	bool loadDisk();
 
 
 private:
 	superNode super;
-};
-
-class DiskblockManager {
-private:
-	
-public:
-	Address freeptr;
-	void initialize();  // initialize when the disk is created
-	Address alloc();  // allocate a free block and return the free block address
-	void free(Address addr);  // recycle the unused block and push it to the stack
-	void printBlockUsage();
-};
-struct file {
-	char fileName[MAXIMUM_FILENAME_LENGTH];
-	short inode_id;
-};
-
-struct Directory {
-	std::vector<file> files;
-	unsigned fileCount;
-	unsigned blockIndex;
-
+	DiskblockManager dbm;
 };
