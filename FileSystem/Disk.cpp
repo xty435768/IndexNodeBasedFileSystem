@@ -68,10 +68,29 @@ void Disk::run()
 	if (!loadDisk())
 		exit(1);
 	else {
+
 		printf("Load file successful!!\n");
+		
 		printf("Block size:%d\n", super.BLOCK_SIZE);
 		printf("Block number:%d\n", super.dataBlockNumber);
+		printf("Free block number:%d\n", super.freeDataBlockNumber);
+		printf("Inode number:%d\n", super.inodeNumber);
+		printf("Free inode number:%d\n", super.freeInodeNumber);
 		dbm.printBlockUsage(&super,diskFile);
+		printf("Loading root inode...");
+		if (setCurrentInode(0)) {
+			printf("Successful!\n");
+			printf("Root inode id:%d\n", currentInode.inode_id);
+			printf("Root inode create time:%s", ctime((time_t const *)&(currentInode.inode_create_time)));
+			printf("Root inode access time:%s", ctime((time_t const*)&(currentInode.inode_access_time)));
+			printf("Root inode modify time:%s", ctime((time_t const*)&(currentInode.inode_modify_time)));
+			printf("Root file size:%d\n", currentInode.fileSize);
+			printf("Root file start at (direct block addresss):%d\n", currentInode.direct[0].to_int());
+		}
+		else {
+			printf("Failed!\n");
+			exit(4);
+		}
 		fclose(diskFile);
 	}
 }
@@ -94,12 +113,13 @@ bool Disk::loadDisk()
 			return false;
 		}
 		if (fileSeek(file, sizeof(magic_number) - 1, SEEK_SET)) return false;
-		if (fileRead(&super, sizeof(superNode), 1, file) != 1)
+		if (fileRead(&super, sizeof(superBlock), 1, file) != 1)
 		{
 			fclose(file);
 			return false;
 		}
 		diskFile = file;
+		dbm.freeptr = super.freeptr;
 		delete[] magic_number_test;
 		//fclose(file);
 		return true;
@@ -116,35 +136,182 @@ bool Disk::loadDisk()
 		if (fileSeek(file, 0, SEEK_SET)) return false;
 		if (fileWrite(magic_number,sizeof(magic_number),1,file) != 1) return false;
 
-		super.inodeNumber = INITIAL_INODE_NUMBER;
-		super.freeInodeNumber = INITIAL_INODE_NUMBER;
-		super.dataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
-		super.freeDataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
-		super.BLOCK_SIZE = INITIAL_BLOCK_SIZE;
-		super.INODE_SIZE = INITIAL_INODE_SIZE;
-		//super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE - sizeof(magic_number) + 1;
-		super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE;
-		super.superBlockStart = sizeof(magic_number) - 1;
-		super.TOTAL_SIZE = INITIAL_DISK_SIZE;
-		//super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
-		//super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
-		//super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
-		
-		super.inodeStart = INITIAL_SUPERBLOCK_SIZE;
-		super.blockStart = super.inodeStart + super.inodeNumber * INITIAL_INODE_SIZE;
-		if (fileSeek(file, sizeof(magic_number) - 1, SEEK_SET)) return false;
-		if (fileWrite(&super, sizeof(superNode), 1, file) != 1) return false;
-		dbm.initialize(&super,file);
+		//super.inodeNumber = INITIAL_INODE_NUMBER;
+		//super.freeInodeNumber = INITIAL_INODE_NUMBER;
+		//super.dataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
+		//super.freeDataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
+		//super.BLOCK_SIZE = INITIAL_BLOCK_SIZE;
+		//super.INODE_SIZE = INITIAL_INODE_SIZE;
+		////super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE - sizeof(magic_number) + 1;
+		//super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE;
+		//super.superBlockStart = sizeof(magic_number) - 1;
+		//super.TOTAL_SIZE = INITIAL_DISK_SIZE;
+		////super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
+		////super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
+		////super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
+		//
+		//super.inodeStart = INITIAL_SUPERBLOCK_SIZE;
+		//super.blockStart = super.inodeStart + super.inodeNumber * INITIAL_INODE_SIZE;
+		dbm.initialize(&super, file);
+		super.freeptr = dbm.freeptr;
+		super.freeDataBlockNumber = dbm.getFreeBlock(file);
+		//if (fileSeek(file, super.superBlockStart, SEEK_SET)) return false;
+		//if (fileWrite(&super, sizeof(superBlock), 1, file) != 1) return false;
 		diskFile = file;
+		printf("Initializing root directory...\n");
+		initializeRootDirectory();
+		
 
 		//fclose(file);
 		return true;
 	}
 }
 
-superNode::superNode()
+void Disk::initializeRootDirectory()
 {
+	Directory root_dir;
+	root_dir.files.push_back(fileEntry(".", 0));
+	root_dir.files.push_back(fileEntry("..", 0));
+	int directoryFileSize = root_dir.files.size() * sizeof(fileEntry);
+	Address rootDirectoryFile = allocateNewBlock(diskFile);
+	if (rootDirectoryFile == Address(0)) {
+		printf("Initialize root directory file failed!\n");
+		exit(2);
+	}
+	for (int i = 0; i < root_dir.files.size(); i++)
+	{
+		fileSeek(diskFile, rootDirectoryFile.to_int() + i * sizeof(fileEntry), SEEK_SET);
+		fileWrite(&(root_dir.files[i]), sizeof(fileEntry), 1, diskFile);
+	}
+	Address directAddresses[1] = { rootDirectoryFile };
+	int root_inode = super.allocateNewInode(root_dir.files.size() * sizeof(fileEntry), 0, directAddresses, NULL, diskFile);
+	if (root_inode >= 0) {
+		printf("Root directory initialized successfully!\n");
+	}
+}
 
+Address Disk::allocateNewBlock(FILE* file)
+{
+	Address ad = dbm.alloc(file);
+	if (ad == Address(0))return ad;
+	super.freeptr = dbm.freeptr;
+	super.freeDataBlockNumber = dbm.getFreeBlock(file);
+	if (!super.updateSuperBlock(file)) {
+		printf("Update super block failed! Reverting...\n");
+		dbm.free(ad, file);
+		super.freeptr = dbm.freeptr;
+		super.freeDataBlockNumber = dbm.getFreeBlock(file);
+		return Address(0);
+	}
+	return ad;
+}
+
+bool Disk::freeBlock(Address addr, FILE* file)
+{
+	dbm.free(addr, file);
+	super.freeptr = dbm.freeptr;
+	super.freeDataBlockNumber = dbm.getFreeBlock(file);
+	if (!super.updateSuperBlock(file)) {
+		printf("Update super block failed!\n");
+		exit(1);
+	}
+	return true;
+}
+
+bool Disk::setCurrentInode(int inode_id)
+{
+	if (fileSeek(diskFile, super.inodeStart + inode_id * super.INODE_SIZE, SEEK_SET)) return false;
+	if (fileRead(&currentInode, sizeof iNode, 1, diskFile) != 1) return false;
+	return true;
+}
+
+
+superBlock::superBlock()
+{
+	inodeNumber = INITIAL_INODE_NUMBER;
+	freeInodeNumber = INITIAL_INODE_NUMBER;
+	dataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
+	freeDataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
+	BLOCK_SIZE = INITIAL_BLOCK_SIZE;
+	INODE_SIZE = INITIAL_INODE_SIZE;
+	//super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE - sizeof(magic_number) + 1;
+	SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE;
+	superBlockStart = sizeof(magic_number) - 1;
+	TOTAL_SIZE = INITIAL_DISK_SIZE;
+	//super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
+	//super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
+	//super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
+	
+	inodeStart = INITIAL_SUPERBLOCK_SIZE;
+	blockStart = inodeStart + inodeNumber * INITIAL_INODE_SIZE;
+	memset(inodeMap, 0, sizeof(inodeMap));
+}
+
+int superBlock::allocateNewInode(unsigned fileSize, int parent, Address direct[], Address* indirect, FILE* file)
+{
+	bool specify_FILE_object = file != NULL;
+
+	if (freeInodeNumber == 0) {
+		printf("No free index-node can be allocated!\n");
+		return -1;
+	}
+	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
+	int arrayIndex;
+	int offset;
+	for (size_t i = 0; i < inodeNumber; i++)
+	{
+		arrayIndex = i / 8;
+		offset = i % 8;
+		if ((inodeMap[arrayIndex] >> (7 - offset)) % 2 == 0) {
+			break;
+		}
+	}
+	inodeMap[arrayIndex] |= (1 << (7 - offset));
+	iNode inode(fileSize, parent, arrayIndex * 8 + offset);
+	if (fileSize <= DIRECT_ADDRESS_NUMBER * BLOCK_SIZE)
+	{
+		for (size_t i = 1; i <= ceil((double)fileSize / BLOCK_SIZE); i++)
+		{
+			inode.direct[i - 1] = direct[i - 1];
+		}
+	}
+	else {
+		for (size_t i = 1; i <= DIRECT_ADDRESS_NUMBER; i++)
+		{
+			inode.direct[i - 1] = direct[i - 1];
+		}
+		inode.indirect = *indirect;
+	}
+	
+	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
+	if (fileSeek(file, inodeStart + inode.inode_id * INODE_SIZE,SEEK_SET)) return -2;
+	if (fileWrite(&inode, sizeof iNode, 1, file) != 1) return -2;
+	if (!specify_FILE_object) { fclose(file); file = NULL; }
+	freeInodeNumber--;
+	if (!updateSuperBlock(file)) { 
+		printf("Update super block failed!\n");
+		return -3; 
+	}
+	return arrayIndex * 8 + offset;
+}
+
+bool superBlock::freeInode(int inodeid, FILE* file)
+{
+	int arrayIndex = inodeid / 8;
+	int offset = inodeid % 8;
+	inodeMap[arrayIndex] &= (~(1 << (7 - offset)));
+	freeInodeNumber++;
+	return updateSuperBlock(file);
+}
+
+bool superBlock::updateSuperBlock(FILE* file)
+{
+	bool specify_FILE_object = file != NULL;
+	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
+	if (fileSeek(file, superBlockStart, SEEK_SET)) return false;
+	if (fileWrite(this, sizeof superBlock, 1, file) != 1) return false;
+	if (!specify_FILE_object) { fclose(file); }
+	return true;
 }
 
 
@@ -207,12 +374,17 @@ void IndirectDiskblock::write(Address blockAddr,FILE* file)  // still untested
 	if (!specify_FILE_object) fclose(file);
 }
 
-iNode::iNode()
+iNode::iNode(unsigned fileSize, int parent, int inode_id)
 {
-
+	time(&inode_create_time);
+	time(&inode_access_time);
+	time(&inode_modify_time);
+	this->fileSize = fileSize;
+	this->parent = parent;
+	this->inode_id = inode_id;
 }
 
-void DiskblockManager::initialize(superNode* super, FILE* file)
+void DiskblockManager::initialize(superBlock* super, FILE* file)
 {
 
 	freeptr = super->blockStart;
@@ -226,27 +398,29 @@ void DiskblockManager::initialize(superNode* super, FILE* file)
 	}
 }
 
-Address DiskblockManager::alloc()
+Address DiskblockManager::alloc(FILE* file)
 {
 	// load the current linked-list block
 	IndirectDiskblock iblock;
 	Address blockAddr = freeptr.block_addr();
-	iblock.load(blockAddr);
+	iblock.load(blockAddr,file);
 
 	// no free blocks
 	if (freeptr.offset().to_int() == 0) {
-		perror("out of disk memory");
-		exit(1);
+		//perror("out of disk memory");
+		//exit(1);
+		printf("out of disk memory!\n");
+		return Address(0);
 	}
 	Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
 	iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
 	if (freeptr.offset().to_int() == 3) {
 		freeptr = iblock.addrs[0] + (NUM_INDIRECT_ADDRESSES - 1) * 3;
 		memset(iblock.addrs, 0, sizeof iblock.addrs);
-		iblock.write(blockAddr);
+		iblock.write(blockAddr,file);
 	}
 	else {
-		iblock.write(blockAddr);
+		iblock.write(blockAddr,file);
 		freeptr = freeptr - 3;
 	}
 	return freeAddr;
@@ -277,9 +451,9 @@ void DiskblockManager::free(Address freeAddr, FILE* file)  // addr is the freed 
 	}
 }
 
-void DiskblockManager::printBlockUsage(superNode* super,FILE* file)
+void DiskblockManager::printBlockUsage(superBlock* super,FILE* file)
 {
-	int freeBlock = 0, linkedListBlock= 0;
+	/*int freeBlock = 0, linkedListBlock= 0;
 	Address ptr = freeptr.block_addr();
 	IndirectDiskblock iblock;
 	iblock.load(ptr,file);
@@ -290,11 +464,45 @@ void DiskblockManager::printBlockUsage(superNode* super,FILE* file)
 		iblock.load(ptr,file);
 	} while (ptr != iblock.addrs[0]);
 	linkedListBlock += 1;
-	freeBlock = (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;
+	freeBlock = (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;*/
+	int linkedListBlock = getLinkedListBlock(file);
+	int freeBlock = getFreeBlock(linkedListBlock);
 	cout << "free block: " << freeBlock << endl;
 	cout << "blocks for linked list: " << linkedListBlock << endl;
 	cout << "blocks used for data: " << (super->TOTAL_SIZE - super->SUPERBLOCK_SIZE - super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE
 		- freeBlock - linkedListBlock << endl;
 	cout << "blocks used for Inodes: " << (super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE << endl;
 	cout << "blocks used for superblock: " << super->SUPERBLOCK_SIZE / super->BLOCK_SIZE << endl;
+}
+
+int DiskblockManager::getFreeBlock(FILE* file)
+{
+	return (getLinkedListBlock(file) - 1) * 339 + freeptr.offset().to_int() / 3;
+}
+
+int DiskblockManager::getFreeBlock(int linkedListBlock)
+{
+	return (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;
+}
+
+int DiskblockManager::getLinkedListBlock(FILE* file)
+{
+	int linkedListBlock = 0;
+	Address ptr = freeptr.block_addr();
+	IndirectDiskblock iblock;
+	iblock.load(ptr, file);
+	do
+	{
+		linkedListBlock += 1;
+		ptr = iblock.addrs[0];
+		iblock.load(ptr, file);
+	} while (ptr != iblock.addrs[0]);
+	linkedListBlock += 1;
+	return linkedListBlock;
+}
+
+fileEntry::fileEntry(const char* fname, short inode_id)
+{
+	strcpy(fileName, fname);
+	this->inode_id = inode_id;
 }

@@ -20,9 +20,9 @@
 // measured in "BITS"
 // #define BITMAP_RESERVE_BITS 3
 // others
-#define MAXIMUM_ABSOLUTE_FILENAME_LENGTH 768
+// #define MAXIMUM_ABSOLUTE_FILENAME_LENGTH 768
 // #define MAXIMUM_FILE_PER_DIRECTORY 128
-#define MAXIMUM_FILENAME_LENGTH 64
+#define MAXIMUM_FILENAME_LENGTH 62
 #define DIRECT_ADDRESS_NUMBER 10
 // measured in "BYTES" 
 #define MAXIMUM_FILE_SIZE DIRECT_ADDRESS_NUMBER * INITIAL_BLOCK_SIZE + 1 * NUM_INDIRECT_ADDRESSES * INITIAL_BLOCK_SIZE
@@ -104,35 +104,43 @@ public:
 class IndirectDiskblock {
 public:
 	Address addrs[NUM_INDIRECT_ADDRESSES];  // addresses loaded from an indirect disk block
-	int numAddress; // number of valid addresses since not all the 341 addr are used
+	//int numAddress; // number of valid addresses since not all the 341 addr are used
 	void load(Address blockAddr,FILE* =NULL);  //load addresses given an indirect block address
 	void write(Address blockAddr,FILE* =NULL);  //write the pointers to the specific block
 };
 
-class superNode
+class superBlock
 {
 public:
-	superNode();
+	superBlock();
 	
 	unsigned inodeNumber;				    // amount of inodes
 	unsigned freeInodeNumber;				// amount of free inodes
 	unsigned dataBlockNumber;				// amount of blocks
 	unsigned freeDataBlockNumber;	        // amount of free blocks
 	
+	char inodeMap[INITIAL_INODE_NUMBER / 8];
+
 	unsigned BLOCK_SIZE;
 	unsigned INODE_SIZE;
 	unsigned SUPERBLOCK_SIZE;
 	unsigned TOTAL_SIZE;
 	
-	int free_block_SP;					// free block stack pointer
-	int *free_block;					// free block stack
+	//int free_block_SP;					// free block stack pointer
+	//int *free_block;					// free block stack
 
 	unsigned superBlockStart;
-	unsigned inodeBitmapStart;
-	unsigned blockBitmapStart;
+	//unsigned inodeBitmapStart;
+	//unsigned blockBitmapStart;
 	unsigned inodeStart;
 	unsigned blockStart;
+
+	Address freeptr;
 	
+	int allocateNewInode(unsigned, int, Address[], Address*, FILE* = NULL);
+	bool freeInode(int, FILE* = NULL);
+	bool updateSuperBlock(FILE* = NULL);
+
 	//get inode count
 	//get block count
 	//get inode free
@@ -143,19 +151,20 @@ class iNode
 {
 public:
 	unsigned fileSize;
-	unsigned dirSize;
+	//unsigned dirSize;
 	//char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
-	time_t inode_change_time;
+	time_t inode_create_time;
 	time_t inode_access_time;
 	time_t inode_modify_time;
 
 	int parent;
 	int inode_id;
 
-	int direct[DIRECT_ADDRESS_NUMBER];
-	int indirect;
+	Address direct[DIRECT_ADDRESS_NUMBER];
+	Address indirect;
 
-	iNode();
+	iNode(unsigned,int,int);
+	iNode() {}
 private:
 
 };
@@ -165,20 +174,25 @@ private:
 	
 public:
 	Address freeptr;
-	void initialize(superNode*,FILE* =NULL);  // initialize when the disk is created
-	Address alloc();  // allocate a free block and return the free block address
+	void initialize(superBlock*,FILE* =NULL);  // initialize when the disk is created
+	Address alloc(FILE* =NULL);  // allocate a free block and return the free block address
 	void free(Address addr,FILE* =NULL);  // recycle the unused block and push it to the stack
-	void printBlockUsage(superNode*, FILE* =NULL);
+	void printBlockUsage(superBlock*, FILE* =NULL);
+	int getFreeBlock(FILE*);
+	int getFreeBlock(int);
+	int getLinkedListBlock(FILE*);
 };
 struct fileEntry {
 	char fileName[MAXIMUM_FILENAME_LENGTH];
 	short inode_id;
+	fileEntry() {};
+	fileEntry(const char* , short);
 };
 
 struct Directory {
 	std::vector<fileEntry> files;
-	unsigned fileCount;
-	unsigned blockIndex;
+	//unsigned fileCount;
+	//unsigned blockIndex;
 
 };
 
@@ -188,17 +202,22 @@ public:
 	Disk();
 	~Disk();
 	FILE* diskFile;
-	//get superNodeStart
+	//get superBlockStart
 	//get inode bitmap start
 	//get inode block start
 	//get data bitmap start
 	//get data block start
-
+	
 	void run();
 	bool loadDisk();
+	void initializeRootDirectory();
+	Address allocateNewBlock(FILE* =NULL);
+	bool freeBlock(Address addr, FILE* = NULL);
+	bool setCurrentInode(int inode_id);
 
 
 private:
-	superNode super;
+	superBlock super;
 	DiskblockManager dbm;
+	iNode currentInode;
 };
