@@ -214,7 +214,7 @@ public:
 	Address allocateNewBlock(FILE* =NULL);
 	bool freeBlock(Address addr, FILE* = NULL);
 	bool setCurrentInode(int inode_id);
-
+	void parse(char* str);
 
 private:
 	superBlock super;
