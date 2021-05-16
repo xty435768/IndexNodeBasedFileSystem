@@ -86,6 +86,11 @@ void Disk::run()
 			printf("Root inode modify time:%s", ctime((time_t const*)&(currentInode.inode_modify_time)));
 			printf("Root file size:%d\n", currentInode.fileSize);
 			printf("Root file start at (direct block addresss):%d\n", currentInode.direct[0].to_int());
+			Directory root = readFileEntriesFromDirectoryFile(currentInode);
+			for (size_t i = 0; i < root.files.size(); i++)
+			{
+				printf("%s\t%d\n", root.files[i].fileName, root.files[i].inode_id);
+			}
 		}
 		else {
 			printf("Failed!\n");
@@ -180,9 +185,11 @@ void Disk::initializeRootDirectory()
 	}
 	for (int i = 0; i < root_dir.files.size(); i++)
 	{
-		fileSeek(diskFile, rootDirectoryFile.to_int() + i * sizeof(fileEntry), SEEK_SET);
-		fileWrite(&(root_dir.files[i]), sizeof(fileEntry), 1, diskFile);
+		memcpy(db.content + i * sizeof(fileEntry), &root_dir.files[i], sizeof(fileEntry));
+		//fileSeek(diskFile, rootDirectoryFile.to_int() + i * sizeof(fileEntry), SEEK_SET);
+		//fileWrite(&(root_dir.files[i]), sizeof(fileEntry), 1, diskFile);
 	}
+	db.write(rootDirectoryFile);
 	Address directAddresses[1] = { rootDirectoryFile };
 	int root_inode = super.allocateNewInode(root_dir.files.size() * sizeof(fileEntry), 0, directAddresses, NULL, diskFile);
 	if (root_inode >= 0) {
@@ -222,6 +229,123 @@ bool Disk::setCurrentInode(int inode_id)
 {
 	if (fileSeek(diskFile, super.inodeStart + inode_id * super.INODE_SIZE, SEEK_SET)) return false;
 	if (fileRead(&currentInode, sizeof iNode, 1, diskFile) != 1) return false;
+	return true;
+}
+
+Directory Disk::readFileEntriesFromDirectoryFile(iNode inode)
+{
+	Directory d;
+	fileEntry fe;
+	unsigned fileSize = inode.fileSize;
+	if (fileSize <= DIRECT_ADDRESS_NUMBER * super.BLOCK_SIZE)
+	{
+		for (int i = 1; i <= ceil((double)fileSize / super.BLOCK_SIZE); i++)
+		{
+			db.load(inode.direct[i - 1], diskFile);
+			if (i == (int)ceil((double)fileSize / super.BLOCK_SIZE))
+			{
+				for (size_t j = 0; j < (fileSize % super.BLOCK_SIZE) / sizeof(fileEntry); j++)
+				{
+					memcpy(&fe, db.content + j * sizeof(fileEntry), sizeof(fileEntry));
+					d.files.push_back(fe);
+				}
+			}
+			else {
+				for (size_t j = 0; j < super.BLOCK_SIZE / sizeof(fileEntry); j++)
+				{
+					memcpy(&fe, db.content + j * sizeof(fileEntry), sizeof(fileEntry));
+					d.files.push_back(fe);
+				}
+			}
+		}
+	}
+	else {
+		for (size_t i = 0; i < DIRECT_ADDRESS_NUMBER; i++)
+		{
+			db.load(inode.direct[i], diskFile);
+			for (size_t j = 0; j < super.BLOCK_SIZE / sizeof(fileEntry); j++)
+			{
+				memcpy(&fe, db.content + j * sizeof(fileEntry), sizeof(fileEntry));
+				d.files.push_back(fe);
+			}
+		}
+		IndirectDiskblock idb;
+		idb.load(inode.indirect, diskFile);
+		unsigned remainingFileSize = fileSize - DIRECT_ADDRESS_NUMBER * super.BLOCK_SIZE;
+		unsigned remainingFullBlocks = remainingFileSize / super.BLOCK_SIZE;
+		for (size_t i = 0; i < remainingFullBlocks; i++)
+		{
+			db.load(idb.addrs[i],diskFile);
+			for (size_t j = 0; j < super.BLOCK_SIZE / sizeof(fileEntry); j++)
+			{
+				memcpy(&fe, db.content + j * sizeof(fileEntry), sizeof(fileEntry));
+				d.files.push_back(fe);
+			}
+		}
+		int lastRemainingEntriesNumber = (remainingFileSize % super.BLOCK_SIZE) / sizeof(fileEntry);
+		db.load(idb.addrs[remainingFullBlocks],diskFile);
+		for (size_t i = 0; i < lastRemainingEntriesNumber; i++)
+		{
+			memcpy(&fe, db.content + i * sizeof(fileEntry), sizeof(fileEntry));
+			d.files.push_back(fe);
+		}
+	}
+	return d;
+}
+
+bool Disk::writeFileEntriesToDirectoryFile(Directory d, iNode inode)
+{
+	unsigned fileSize = inode.fileSize;
+	if (fileSize <= DIRECT_ADDRESS_NUMBER * super.BLOCK_SIZE)
+	{
+		for (int i = 1; i <= ceil((double)fileSize / super.BLOCK_SIZE); i++)
+		{
+			if (i == (int)ceil((double)fileSize / super.BLOCK_SIZE))
+			{
+				for (int j = (i - 1) * super.BLOCK_SIZE / sizeof(fileEntry); j < d.files.size(); j++)
+				{
+					memcpy(db.content + (j % (super.BLOCK_SIZE / sizeof(fileEntry))) * sizeof(fileEntry), &d.files[j], sizeof(fileEntry));
+				}
+				db.write(inode.direct[i]);
+			}
+			else
+			{
+				for (int j = (i - 1) * super.BLOCK_SIZE / sizeof(fileEntry); j < i * super.BLOCK_SIZE / sizeof(fileEntry); j++) 
+				{
+					memcpy(db.content + (j % (super.BLOCK_SIZE / sizeof(fileEntry))) * sizeof(fileEntry), &d.files[j], sizeof(fileEntry));
+				}
+				db.write(inode.direct[i - 1]);
+			}
+		}
+	}
+	else {
+		for (size_t i = 0; i < DIRECT_ADDRESS_NUMBER; i++)
+		{
+			for (size_t j = 0; j < super.BLOCK_SIZE / sizeof(fileEntry); j++)
+			{
+				memcpy(db.content + j * sizeof(fileEntry), &d.files[i * (super.BLOCK_SIZE / sizeof(fileEntry)) + j], sizeof(fileEntry));
+			}
+			db.write(inode.direct[i]);
+		}
+		IndirectDiskblock idb;
+		idb.load(inode.indirect, diskFile);
+		unsigned remainingFileSize = fileSize - DIRECT_ADDRESS_NUMBER * super.BLOCK_SIZE;
+		unsigned remainingFullBlocks = remainingFileSize / super.BLOCK_SIZE;
+		for (size_t i = 0; i < remainingFullBlocks; i++)
+		{
+			for (size_t j = 0; j < super.BLOCK_SIZE / sizeof(fileEntry); j++)
+			{
+				memcpy(db.content + j * sizeof(fileEntry), &d.files[DIRECT_ADDRESS_NUMBER * super.BLOCK_SIZE / sizeof(fileEntry) + i * (super.BLOCK_SIZE / sizeof(fileEntry)) + j], sizeof(fileEntry));
+			}
+			db.write(idb.addrs[i]);
+		}
+		unsigned lastRemainingEntriesNumber = (remainingFileSize % super.BLOCK_SIZE) / sizeof(fileEntry);
+		for (size_t i = 0; i < lastRemainingEntriesNumber; i++)
+		{
+			memcpy(db.content + i * sizeof(fileEntry), &d.files[(DIRECT_ADDRESS_NUMBER + remainingFullBlocks) * super.BLOCK_SIZE / sizeof(fileEntry) + i], sizeof(fileEntry));
+		}
+		db.write(idb.addrs[remainingFullBlocks]);
+	}
 	return true;
 }
 
@@ -315,6 +439,11 @@ bool superBlock::updateSuperBlock(FILE* file)
 }
 
 
+void Diskblock::refreshContent()
+{
+	memset(content, 0, sizeof content);
+}
+
 Diskblock::Diskblock(int addrInt)
 {
 	load(addrInt);
@@ -325,32 +454,36 @@ Diskblock::Diskblock(Address addr)
 	load(addr);
 }
 
-void Diskblock::load(int addrInt)
+void Diskblock::load(int addrInt, FILE* file)
 {
-	FILE* file = fileOpen(DISK_PATH, "rb+");
+	refreshContent();
+	bool specify_FILE_object = file != NULL;
+	if(!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
 	fileSeek(file, addrInt, SEEK_SET);
 	fileRead(content, sizeof content, 1, file);
-	fclose(file);
+	if (!specify_FILE_object) fclose(file);
 }
 
-void Diskblock::load(Address addr)
+void Diskblock::load(Address addr, FILE* file)
 {
 	int addrInt = addr.to_int();
-	load(addrInt);
+	load(addrInt, file);
 }
 
-void Diskblock::write(int addrInt)
+void Diskblock::write(int addrInt, FILE* file)
 {
-	FILE* file = fileOpen(DISK_PATH, "rb+");
+	bool specify_FILE_object = file != NULL;
+	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
 	fileSeek(file, addrInt, SEEK_SET);
 	fileWrite(content, sizeof content, 1, file);
-	fclose(file);
+	if (!specify_FILE_object) fclose(file);
+	refreshContent();
 }
 
-void Diskblock::write(Address addr)
+void Diskblock::write(Address addr, FILE* file)
 {
 	int addrInt = addr.to_int();
-	write(addrInt);
+	write(addrInt, file);
 }
 
 void IndirectDiskblock::load(Address a,FILE* file)
