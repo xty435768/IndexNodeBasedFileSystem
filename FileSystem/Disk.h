@@ -90,14 +90,15 @@ class Diskblock {  // can get the content from or write the content to a specifi
 public:
 	unsigned char content[1024];
 	Diskblock() {
-		memset(content, 0, sizeof content);
+		refreshContent();
 	}
+	void refreshContent();
 	Diskblock(int addrInt); 
 	Diskblock(Address addr); 
-	void load(int addrInt);// load a block from disk given an address to the content buffer
-	void load(Address addr);// load a block from disk given an address to the content buffer
-	void write(int addrInt);  // write the content buffer to the specific disk block
-	void write(Address addr);  // write the content buffer to the specific disk block
+	void load(int addrInt,FILE* = NULL);// load a block from disk given an address to the content buffer
+	void load(Address addr, FILE* = NULL);// load a block from disk given an address to the content buffer
+	void write(int addrInt, FILE* = NULL);  // write the content buffer to the specific disk block
+	void write(Address addr, FILE* = NULL);  // write the content buffer to the specific disk block
 
 };
 
@@ -214,10 +215,16 @@ public:
 	Address allocateNewBlock(FILE* =NULL);
 	bool freeBlock(Address addr, FILE* = NULL);
 	bool setCurrentInode(int inode_id);
+
 	void parse(char* str);
+
+	Directory readFileEntriesFromDirectoryFile(iNode);
+	bool writeFileEntriesToDirectoryFile(Directory, iNode);
+
 
 private:
 	superBlock super;
 	DiskblockManager dbm;
 	iNode currentInode;
+	Diskblock db;
 };
