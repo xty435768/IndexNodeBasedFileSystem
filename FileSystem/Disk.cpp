@@ -53,6 +53,138 @@ int filePutCharacter(int character, FILE *file)
 	return r;
 }
 
+void Disk::parse(char* str)
+{
+	char* command = strtok(str, " ");
+	if (command == NULL) {
+		cout << "no command error" << endl;
+		return;
+	}
+	
+	if (!strcmp(command, "createFile")) {
+		char* path = strtok(NULL, " ");
+		if (path == NULL) {
+			cout << "lack of path" << endl;
+			return;
+		}
+		char* size = strtok(NULL, " ");
+		if (size == NULL) {
+			cout << "lack of size" << endl;
+			return;
+		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implement creating file
+		
+
+	}
+	else if (!strcmp(command, "createDir")) {
+		char* path = strtok(NULL, " ");
+		if (path == NULL) {
+			cout << "lack of path" << endl;
+			return;
+		}
+		//TODO: implement creating directory
+
+	}
+	else if (!strcmp(command, "deleteFile")) {
+		char* path = strtok(NULL, " ");
+		if (path == NULL) {
+			cout << "lack of path" << endl;
+			return;
+		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implement deleting file
+
+	}
+	else if (!strcmp(command, "deleteDir")) {
+		char* path = strtok(NULL, " ");
+		if (path == NULL) {
+			cout << "lack of path" << endl;
+			return;
+		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implement deleting directory. 
+		//current working directory should not be deleted.
+
+	}
+	else if (!strcmp(command, "changeDir")) {
+		char* path = strtok(NULL, " ");
+		if (path == NULL) {
+			cout << "lack of path" << endl;
+			return;
+		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implement changing working directory
+		
+	}
+	else if (!strcmp(command, "dir")) {
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implement listing all items in the directory
+
+	}
+	else if (!strcmp(command, "cp")) {
+		char* path1 = strtok(NULL, " ");
+		if (path1 == NULL) {
+			cout << "lack of original path" << endl;
+			return;
+		}
+		char* path2 = strtok(NULL, " ");
+		if (path2 == NULL) {
+			cout << "lack of target path" << endl;
+			return;
+		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implementing coping file or dir
+
+	}
+	else if (!strcmp(command, "sum")) {
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		dbm.printBlockUsage(&super, diskFile);
+	}
+	else if (!strcmp(command, "cat")) {
+		char* path = strtok(NULL, " ");
+		if (path == NULL) {
+			cout << "lack of path" << endl;
+			return;
+		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+		//TODO: implementing printing the content of file.
+
+	}
+}
+
 Disk::Disk()
 {
 

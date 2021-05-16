@@ -1,6 +1,7 @@
 #include "Disk.h"
 #include <iostream>
 #include <string.h>
+#include <vector>
 using namespace std;
 
 Address a() {
@@ -20,8 +21,8 @@ int main()
 	Address v = a();
 	char a = 25;
 	char b = (1 << (7 - 5));
-	printf("%d\n", (int)(a | b)); //½«µÚÎåÎ»ÉèÖÃÎª1£¬½á¹û29
-	printf("%d\n", (int)(a & (~(1 << (7 - 3))))); //½«µÚÈýÎ»ÉèÖÃÎª0£¬½á¹ûÎª9
+	printf("%d\n", (int)(a | b)); //å°†ç¬¬äº”ä½è®¾ç½®ä¸º1ï¼Œç»“æžœ29
+	printf("%d\n", (int)(a & (~(1 << (7 - 3))))); //å°†ç¬¬ä¸‰ä½è®¾ç½®ä¸º0ï¼Œç»“æžœä¸º9
 	//dm.initialize();
 	//cout << dm.freeptr.to_int() << endl;
 	//dm.freeptr = INITLAL_FREEPTR;

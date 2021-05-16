@@ -215,6 +215,9 @@ public:
 	Address allocateNewBlock(FILE* =NULL);
 	bool freeBlock(Address addr, FILE* = NULL);
 	bool setCurrentInode(int inode_id);
+
+	void parse(char* str);
+
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
 
