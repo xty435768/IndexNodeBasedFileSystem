@@ -227,9 +227,14 @@ bool Disk::freeBlock(Address addr, FILE* file)
 
 bool Disk::setCurrentInode(int inode_id)
 {
-	if (fileSeek(diskFile, super.inodeStart + inode_id * super.INODE_SIZE, SEEK_SET)) return false;
-	if (fileRead(&currentInode, sizeof iNode, 1, diskFile) != 1) return false;
-	return true;
+	//if (fileSeek(diskFile, super.inodeStart + inode_id * super.INODE_SIZE, SEEK_SET)) return false;
+	//if (fileRead(&currentInode, sizeof iNode, 1, diskFile) != 1) return false;
+	iNode inode = super.loadInode(inode_id);
+	if (inode.inode_id != -1) {
+		memcpy(&currentInode, &inode, sizeof(iNode));
+		return true;
+	}
+	else return false;
 }
 
 Directory Disk::readFileEntriesFromDirectoryFile(iNode inode)
@@ -346,6 +351,191 @@ bool Disk::writeFileEntriesToDirectoryFile(Directory d, iNode inode)
 		}
 		db.write(idb.addrs[remainingFullBlocks]);
 	}
+	return true;
+}
+
+bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
+{
+	/*1、只占用直接块，不需要申请新块
+	2、只占用直接块，需要申请新块
+	3、一开始占用直接块，但加了之后需要申请间接块
+	4、占用间接块，不需要申请新块
+	5、占用间接块，需要申请新块*/
+	if (super.freeInodeNumber == 0)
+	{
+		printf("No free index-node left!\n");
+		return false;
+	}
+	if (parent.fileSize == MAXIMUM_FILE_SIZE) {
+		printf("This directory has reached its maximum size!\n");
+		return false;
+	}
+	unsigned newFileSizeOfCurrentDirectory = parent.fileSize + sizeof(fileEntry);
+	if (parent.fileSize < super.BLOCK_SIZE * DIRECT_ADDRESS_NUMBER)
+	{
+		if (parent.fileSize % super.BLOCK_SIZE != 0) {
+			//1、只占用直接块，父目录文件不需要申请新块，需要给新文件夹一个block
+			int block_required = 0;
+			if (freeBlockCheck(block_required, name))
+			{
+				//应用新文件夹的更改
+				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1)return false;
+				//应用父文件夹的更改
+				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
+				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent.fileSize += sizeof(fileEntry);
+				parent.updateModifiedTime();
+				super.writeInode(parent, diskFile);
+				writeFileEntriesToDirectoryFile(parent_dir, parent);
+			}
+			else return false;
+		}
+		else
+		{
+			//2、只占用直接块，需要申请新块
+			int block_required = 1;
+			if (freeBlockCheck(block_required, name))
+			{
+				//应用新文件夹的更改
+				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1)return false;
+				//应用父文件夹的更改
+				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
+				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent.fileSize += sizeof(fileEntry);
+				parent.updateModifiedTime();
+				Address newBlockForParentDirectory = allocateNewBlock(diskFile);
+				parent.direct[parent.fileSize / super.BLOCK_SIZE] = newBlockForParentDirectory;
+				super.writeInode(parent, diskFile);
+				writeFileEntriesToDirectoryFile(parent_dir, parent);
+			}
+			else return false;
+		}
+	}
+	else if (parent.fileSize == super.BLOCK_SIZE * DIRECT_ADDRESS_NUMBER) 
+	{
+		//3、一开始占用直接块，但加了之后需要申请间接块
+		int block_required = 2;
+		if (freeBlockCheck(block_required, name))
+		{
+			//应用新文件夹的更改
+			int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+			if (newInodeForNewDirectory == -1) return false;
+			//应用父文件夹的更改
+			Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
+			parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+			parent.fileSize += sizeof(fileEntry);
+			parent.updateModifiedTime();
+			Address newIndirectAddressBlockForParentDirectory = allocateNewBlock(diskFile);
+			Address newIndirectBlockForParentDirectory = allocateNewBlock(diskFile);
+			parent.indirect = newIndirectAddressBlockForParentDirectory;
+			IndirectDiskblock idb;
+			idb.addrs[0] = newIndirectBlockForParentDirectory;
+			idb.write(parent.indirect, diskFile);
+			super.writeInode(parent, diskFile);
+			writeFileEntriesToDirectoryFile(parent_dir, parent);
+		}
+		else return false;
+	}
+	else
+	{
+		if (parent.fileSize % super.BLOCK_SIZE != 0) {
+			//4、占用间接块，不需要申请新块
+			int block_required = 0;
+			if (freeBlockCheck(block_required, name)) {
+				//应用新文件夹的更改
+				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1) return false;
+				//应用父文件夹的更改
+				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
+				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent.fileSize += sizeof(fileEntry);
+				parent.updateModifiedTime();
+				super.writeInode(parent, diskFile);
+				writeFileEntriesToDirectoryFile(parent_dir, parent);
+			}
+			else return false;
+		}
+		else {
+			//5、占用间接块，需要申请新块
+			int block_required = 1;
+			if (freeBlockCheck(block_required, name)) {
+				//应用新文件夹的更改
+				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1) return false;
+				//应用父文件夹的更改
+				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
+				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent.fileSize += sizeof(fileEntry);
+				parent.updateModifiedTime();
+				Address newIndirectBlockForParentDirectory = allocateNewBlock(diskFile);
+				IndirectDiskblock idb;
+				idb.load(parent.indirect,diskFile);
+				idb.addrs[parent.fileSize / super.BLOCK_SIZE - DIRECT_ADDRESS_NUMBER] = newIndirectBlockForParentDirectory;
+				idb.write(parent.indirect, diskFile);
+				super.writeInode(parent, diskFile);
+				writeFileEntriesToDirectoryFile(parent_dir, parent);
+			}
+			else return false;
+		}
+	}
+	return true;
+}
+
+short Disk::applyChangesForNewDirectory(iNode parent, const char* name)
+{
+	// return: new inode id for new directory
+	Address newBlockForNewDirectory = allocateNewBlock(diskFile);
+	Address newBlocks[1] = { newBlockForNewDirectory };
+	int newInodeForNewDirectory = super.allocateNewInode(2 * sizeof(fileEntry), parent.inode_id, newBlocks, NULL, diskFile);
+	Directory dir;
+	dir.files.push_back(fileEntry(".", newInodeForNewDirectory));
+	dir.files.push_back(fileEntry("..", parent.inode_id));
+	if (!writeFileEntriesToDirectoryFile(dir, super.loadInode(newInodeForNewDirectory)))
+	{
+		printf("Failed to write file entries to disk for new directory!\n");
+		super.freeInode(newInodeForNewDirectory, diskFile);
+		freeBlock(newBlockForNewDirectory, diskFile);
+		return -1;
+	}
+	return newInodeForNewDirectory;
+}
+
+bool Disk::freeBlockCheck(int blockRequirementOfparent, const char* newDirectoryName)
+{
+	int newDirectoryBlockRequirment = 1;
+	int newDirectoryInodeRequirment = 1;
+	printf("Need %d new block(s) for current directory, %d inode(s) and %d block(s) for new directory: %s \n", blockRequirementOfparent, newDirectoryInodeRequirment, newDirectoryBlockRequirment, newDirectoryName);
+	printf("Free block: %d.\n", super.freeDataBlockNumber);
+	if (newDirectoryBlockRequirment + blockRequirementOfparent < super.freeDataBlockNumber) {
+		return true;
+	}
+	else
+	{
+		printf("No enough blocks left in this disk!\n");
+		return false;
+	}
+}
+
+iNode superBlock::loadInode(short id,FILE* file)
+{
+	bool specify_FILE_object = file != NULL;
+	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
+	iNode inode;
+	if (fileSeek(file, inodeStart + id * INODE_SIZE, SEEK_SET)) return iNode(0, -1, -1);
+	if (fileRead(&inode, sizeof iNode, 1, file) != 1) return iNode(0, -1, -1);
+	if (!specify_FILE_object) fclose(file);
+	return inode;
+}
+
+bool superBlock::writeInode(iNode inode, FILE* file)
+{
+	bool specify_FILE_object = file != NULL;
+	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
+	if (fileSeek(file, inodeStart + inode.inode_id * INODE_SIZE, SEEK_SET)) return false;
+	if (fileWrite(&inode, sizeof iNode, 1, file) != 1)return false;
+	if (!specify_FILE_object) fclose(file);
 	return true;
 }
 
@@ -509,12 +699,27 @@ void IndirectDiskblock::write(Address blockAddr,FILE* file)  // still untested
 
 iNode::iNode(unsigned fileSize, int parent, int inode_id)
 {
-	time(&inode_create_time);
-	time(&inode_access_time);
-	time(&inode_modify_time);
+	updateCreateTime();
+	updateModifiedTime();
+	updateAccessTime();
 	this->fileSize = fileSize;
 	this->parent = parent;
 	this->inode_id = inode_id;
+}
+
+void iNode::updateCreateTime()
+{
+	time(&inode_create_time);
+}
+
+void iNode::updateModifiedTime()
+{
+	time(&inode_access_time);
+}
+
+void iNode::updateAccessTime()
+{
+	time(&inode_modify_time);
 }
 
 void DiskblockManager::initialize(superBlock* super, FILE* file)

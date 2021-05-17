@@ -110,6 +110,32 @@ public:
 	void write(Address blockAddr,FILE* =NULL);  //write the pointers to the specific block
 };
 
+class iNode
+{
+public:
+	unsigned fileSize;
+	//unsigned dirSize;
+	//char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
+	time_t inode_create_time;
+	time_t inode_access_time;
+	time_t inode_modify_time;
+
+	int parent;
+	int inode_id;
+
+	Address direct[DIRECT_ADDRESS_NUMBER];
+	Address indirect;
+
+	iNode(unsigned, int, int);
+	iNode() {}
+	void updateCreateTime();
+	void updateModifiedTime();
+	void updateAccessTime();
+
+private:
+
+};
+
 class superBlock
 {
 public:
@@ -142,33 +168,10 @@ public:
 	bool freeInode(int, FILE* = NULL);
 	bool updateSuperBlock(FILE* = NULL);
 
-	//get inode count
-	//get block count
-	//get inode free
-	//get block free
+	iNode loadInode(short, FILE* = NULL);
+	bool writeInode(iNode, FILE* = NULL);
 };
 
-class iNode
-{
-public:
-	unsigned fileSize;
-	//unsigned dirSize;
-	//char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
-	time_t inode_create_time;
-	time_t inode_access_time;
-	time_t inode_modify_time;
-
-	int parent;
-	int inode_id;
-
-	Address direct[DIRECT_ADDRESS_NUMBER];
-	Address indirect;
-
-	iNode(unsigned,int,int);
-	iNode() {}
-private:
-
-};
 
 class DiskblockManager {
 private:
@@ -217,7 +220,10 @@ public:
 	bool setCurrentInode(int inode_id);
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
-
+	bool createDirectoryUnderInode(iNode, const char*);
+	short applyChangesForNewDirectory(iNode,const char*);
+	bool freeBlockCheck(int,const char*);
+	
 
 private:
 	superBlock super;
