@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <vector>
+#include <string>
+#include <stack>
+#include <regex>
 #pragma warning(disable:4996)
 
 // measured in "BYTES" 
@@ -131,6 +134,10 @@ public:
 	void updateCreateTime();
 	void updateModifiedTime();
 	void updateAccessTime();
+	std::string getCreateTime();
+	std::string getModifiedTime();
+	std::string getAccessTime();
+
 
 private:
 
@@ -197,7 +204,7 @@ struct Directory {
 	std::vector<fileEntry> files;
 	//unsigned fileCount;
 	//unsigned blockIndex;
-
+	short findInFileEntries(const char*);
 };
 
 class Disk
@@ -206,11 +213,7 @@ public:
 	Disk();
 	~Disk();
 	FILE* diskFile;
-	//get superBlockStart
-	//get inode bitmap start
-	//get inode block start
-	//get data bitmap start
-	//get data block start
+	
 	
 	void run();
 	bool loadDisk();
@@ -223,14 +226,18 @@ public:
 
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
-	bool createDirectoryUnderInode(iNode, const char*);
+	int createDirectoryUnderInode(iNode&, const char*);
 	short applyChangesForNewDirectory(iNode,const char*);
 	bool freeBlockCheck(int,const char*);
-	
-
+	void listDirectory(iNode);
+	void printCurrentDirectory();
+	std::string getFileName(iNode);
+	bool changeDirectory(const char*);
+	std::vector<std::string> stringSplit(const std::string&, const std::string&);
 private:
 	superBlock super;
 	DiskblockManager dbm;
 	iNode currentInode;
 	Diskblock db;
+	std::regex fileNamePattern;
 };

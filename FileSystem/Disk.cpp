@@ -1,5 +1,7 @@
 #include "Disk.h"
 #include <iostream>
+#include <cstdio>
+
 using namespace std;
 #pragma warning(disable:4996)
 
@@ -87,7 +89,37 @@ void Disk::parse(char* str)
 			cout << "lack of path" << endl;
 			return;
 		}
-		//TODO: implement creating directory
+		if (strlen(path) > MAXIMUM_FILENAME_LENGTH - 1) {
+			printf("The directory name is too long! Maximum length: %d.\n", MAXIMUM_FILENAME_LENGTH - 1);
+			return;
+		}
+		if (!regex_match(string(path), fileNamePattern))
+		{
+			printf("Your file name does not meet the specification. "
+				"The file name can only consist of uppercase or lowercase English letters, numbers or underscores\n");
+			return;
+		}
+		vector<string> pathList = stringSplit(string(path), "/");
+		int inode_id_ptr = currentInode.inode_id;
+		for (size_t i = 0; i < pathList.size(); i++)
+		{
+			if (pathList[i] == "") continue;
+			iNode inode_ptr = super.loadInode(inode_id_ptr,diskFile);
+			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
+			short nextDirectoryInode = dir.findInFileEntries(pathList[i].c_str());
+			if (nextDirectoryInode != -1) {
+				inode_id_ptr = nextDirectoryInode;
+			}
+			else {
+				inode_id_ptr = createDirectoryUnderInode(inode_ptr, pathList[i].c_str());
+				if (inode_id_ptr == -1) {
+					printf("Create directory failed!\n");
+					return;
+				}
+			}
+		    
+		}
+		printf("Create directory successful!\n");
 
 	}
 	else if (!strcmp(command, "deleteFile")) {
@@ -130,7 +162,13 @@ void Disk::parse(char* str)
 			cout << "more arguments than expected" << endl;
 			return;
 		}
-		//TODO: implement changing working directory
+		if (changeDirectory(path)) {
+			printf("Directory has changed to %s\n", path);
+		}
+		else
+		{
+			printf("Change directory failed!\n", path);
+		}
 		
 	}
 	else if (!strcmp(command, "dir")) {
@@ -139,7 +177,7 @@ void Disk::parse(char* str)
 			cout << "more arguments than expected" << endl;
 			return;
 		}
-		//TODO: implement listing all items in the directory
+		listDirectory(currentInode);
 
 	}
 	else if (!strcmp(command, "cp")) {
@@ -183,11 +221,15 @@ void Disk::parse(char* str)
 		//TODO: implementing printing the content of file.
 
 	}
+	else 
+    {
+	    printf("Unknown command! Please check again!\n");
+    }
 }
 
 Disk::Disk()
 {
-
+	fileNamePattern = regex("^([a-z]|[A-Z]|[_/]|[0-9])*$");
 }
 
 Disk::~Disk()
@@ -213,15 +255,21 @@ void Disk::run()
 		if (setCurrentInode(0)) {
 			printf("Successful!\n");
 			printf("Root inode id:%d\n", currentInode.inode_id);
-			printf("Root inode create time:%s", ctime((time_t const *)&(currentInode.inode_create_time)));
-			printf("Root inode access time:%s", ctime((time_t const*)&(currentInode.inode_access_time)));
-			printf("Root inode modify time:%s", ctime((time_t const*)&(currentInode.inode_modify_time)));
+			printf("Root inode create time:%s\n", currentInode.getCreateTime().c_str());
+			printf("Root inode access time:%s\n", currentInode.getAccessTime().c_str());
+			printf("Root inode modify time:%s\n", currentInode.getModifiedTime().c_str());
 			printf("Root file size:%d\n", currentInode.fileSize);
 			printf("Root file start at (direct block addresss):%d\n", currentInode.direct[0].to_int());
-			Directory root = readFileEntriesFromDirectoryFile(currentInode);
-			for (size_t i = 0; i < root.files.size(); i++)
-			{
-				printf("%s\t%d\n", root.files[i].fileName, root.files[i].inode_id);
+			
+
+			while (true) {
+				printCurrentDirectory();
+				printf("#");
+				char command[1024];
+				scanf("%[^\n]", &command);
+				getchar();
+				if (!strcmp(command, "exit"))break;
+				parse(command);
 			}
 		}
 		else {
@@ -443,7 +491,7 @@ bool Disk::writeFileEntriesToDirectoryFile(Directory d, iNode inode)
 				{
 					memcpy(db.content + (j % (super.BLOCK_SIZE / sizeof(fileEntry))) * sizeof(fileEntry), &d.files[j], sizeof(fileEntry));
 				}
-				db.write(inode.direct[i]);
+				db.write(inode.direct[i - 1]);
 			}
 			else
 			{
@@ -486,7 +534,7 @@ bool Disk::writeFileEntriesToDirectoryFile(Directory d, iNode inode)
 	return true;
 }
 
-bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
+int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 {
 	/*1、只占用直接块，不需要申请新块
 	2、只占用直接块，需要申请新块
@@ -496,13 +544,28 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 	if (super.freeInodeNumber == 0)
 	{
 		printf("No free index-node left!\n");
-		return false;
+		return -1;
 	}
 	if (parent.fileSize == MAXIMUM_FILE_SIZE) {
 		printf("This directory has reached its maximum size!\n");
-		return false;
+		return -1;
+	}
+	bool checkDuplicate = false;
+	Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
+	for (size_t i = 0; i < parent_dir.files.size(); i++)
+	{
+		if (!strcmp(parent_dir.files[i].fileName, name))
+		{
+			checkDuplicate = true;
+			break;
+		}
+	}
+	if (checkDuplicate) {
+		printf("File/Directory with same name is exist: %s\nPlease change another name!\n",name);
+		return -1;
 	}
 	unsigned newFileSizeOfCurrentDirectory = parent.fileSize + sizeof(fileEntry);
+	int newInodeForNewDirectory = -1;
 	if (parent.fileSize < super.BLOCK_SIZE * DIRECT_ADDRESS_NUMBER)
 	{
 		if (parent.fileSize % super.BLOCK_SIZE != 0) {
@@ -511,8 +574,8 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 			if (freeBlockCheck(block_required, name))
 			{
 				//应用新文件夹的更改
-				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1)return false;
+				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1)return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
 				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
@@ -521,7 +584,7 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 				super.writeInode(parent, diskFile);
 				writeFileEntriesToDirectoryFile(parent_dir, parent);
 			}
-			else return false;
+			else return -1;
 		}
 		else
 		{
@@ -530,8 +593,8 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 			if (freeBlockCheck(block_required, name))
 			{
 				//应用新文件夹的更改
-				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1)return false;
+				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1)return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
 				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
@@ -542,7 +605,7 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 				super.writeInode(parent, diskFile);
 				writeFileEntriesToDirectoryFile(parent_dir, parent);
 			}
-			else return false;
+			else return -1;
 		}
 	}
 	else if (parent.fileSize == super.BLOCK_SIZE * DIRECT_ADDRESS_NUMBER) 
@@ -552,8 +615,8 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 		if (freeBlockCheck(block_required, name))
 		{
 			//应用新文件夹的更改
-			int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-			if (newInodeForNewDirectory == -1) return false;
+			newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+			if (newInodeForNewDirectory == -1) return -1;
 			//应用父文件夹的更改
 			Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
 			parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
@@ -568,7 +631,7 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 			super.writeInode(parent, diskFile);
 			writeFileEntriesToDirectoryFile(parent_dir, parent);
 		}
-		else return false;
+		else return -1;
 	}
 	else
 	{
@@ -577,8 +640,8 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 			int block_required = 0;
 			if (freeBlockCheck(block_required, name)) {
 				//应用新文件夹的更改
-				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1) return false;
+				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1) return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
 				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
@@ -587,15 +650,15 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 				super.writeInode(parent, diskFile);
 				writeFileEntriesToDirectoryFile(parent_dir, parent);
 			}
-			else return false;
+			else return -1;
 		}
 		else {
 			//5、占用间接块，需要申请新块
 			int block_required = 1;
 			if (freeBlockCheck(block_required, name)) {
 				//应用新文件夹的更改
-				int newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1) return false;
+				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
+				if (newInodeForNewDirectory == -1) return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
 				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
@@ -609,10 +672,10 @@ bool Disk::createDirectoryUnderInode(iNode parent, const char* name)
 				super.writeInode(parent, diskFile);
 				writeFileEntriesToDirectoryFile(parent_dir, parent);
 			}
-			else return false;
+			else return -1;
 		}
 	}
-	return true;
+	return newInodeForNewDirectory;
 }
 
 short Disk::applyChangesForNewDirectory(iNode parent, const char* name)
@@ -648,6 +711,81 @@ bool Disk::freeBlockCheck(int blockRequirementOfparent, const char* newDirectory
 		printf("No enough blocks left in this disk!\n");
 		return false;
 	}
+}
+
+void Disk::listDirectory(iNode directory_inode)
+{
+	Directory dir = readFileEntriesFromDirectoryFile(directory_inode);
+	printf("\nCurrent working directory: ");
+	printCurrentDirectory();
+	printf("\nFile Name\tFile Size(Bytes)\tCreate Time\t\t\tModified Time\t\t\tInode ID\n");
+	iNode in;
+	for (size_t i = 0; i < dir.files.size(); i++)
+	{
+		in = super.loadInode(dir.files[i].inode_id);
+		printf("%s\t\t%d\t\t\t%s\t%s\t%d\n", dir.files[i].fileName, in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
+	}
+	printf("\n");
+}
+
+void Disk::printCurrentDirectory()
+{
+	iNode inode = currentInode;
+	stack<string> directories;
+	while (inode.inode_id != 0)
+	{
+		directories.push(getFileName(inode));
+		inode = super.loadInode(inode.parent, diskFile);
+	}
+	printf("/");
+	while (!directories.empty()) {
+		printf("%s/", directories.top().c_str());
+		directories.pop();
+	}
+	printf(" ");
+}
+
+string Disk::getFileName(iNode inode)
+{
+	if (inode.inode_id == 0) {
+		return string("");
+	}
+	iNode parent_inode = super.loadInode(inode.parent, diskFile);
+	Directory parent_dir = readFileEntriesFromDirectoryFile(parent_inode);
+	for (size_t i = 0; i < parent_dir.files.size(); i++)
+	{
+		if (parent_dir.files[i].inode_id == inode.inode_id)
+			return string(parent_dir.files[i].fileName);
+	}
+	printf("No such file or directory!\n");
+	exit(5);
+
+}
+
+bool Disk::changeDirectory(const char* destination)
+{
+	Directory current_dir = readFileEntriesFromDirectoryFile(currentInode);
+	if (destination[0] == '/')
+		destination += 1;
+	size_t i;
+	for (i = 0; i < current_dir.files.size(); i++)
+	{
+		if (!strcmp(current_dir.files[i].fileName, destination))
+		{
+			currentInode = super.loadInode(current_dir.files[i].inode_id, diskFile);
+			return true;
+		}
+	}
+	printf("No such directory!\n");
+	return false;
+}
+
+vector<string> Disk::stringSplit(const string& str, const string& pattern)
+{
+	regex re(pattern);
+	return vector<string> {
+		sregex_token_iterator(str.begin(), str.end(), re, -1),sregex_token_iterator()
+	};
 }
 
 iNode superBlock::loadInode(short id,FILE* file)
@@ -804,6 +942,7 @@ void Diskblock::write(int addrInt, FILE* file)
 
 void Diskblock::write(Address addr, FILE* file)
 {
+
 	int addrInt = addr.to_int();
 	write(addrInt, file);
 }
@@ -852,6 +991,27 @@ void iNode::updateModifiedTime()
 void iNode::updateAccessTime()
 {
 	time(&inode_modify_time);
+}
+
+string iNode::getCreateTime()
+{
+	string time_str = ctime((time_t const*)&(inode_create_time));
+	time_str = time_str.substr(0, time_str.size() - 1);
+	return time_str;
+}
+
+string iNode::getModifiedTime()
+{
+	string time_str = ctime((time_t const*)&(inode_modify_time));
+	time_str = time_str.substr(0, time_str.size() - 1);
+	return time_str;
+}
+
+string iNode::getAccessTime()
+{
+	string time_str = ctime((time_t const*)&(inode_access_time));
+	time_str = time_str.substr(0, time_str.size() - 1);
+	return time_str;
 }
 
 void DiskblockManager::initialize(superBlock* super, FILE* file)
@@ -975,4 +1135,14 @@ fileEntry::fileEntry(const char* fname, short inode_id)
 {
 	strcpy(fileName, fname);
 	this->inode_id = inode_id;
+}
+
+short Directory::findInFileEntries(const char* name)
+{
+	for (size_t i = 0; i < files.size(); i++)
+	{
+		if (!strcmp(files[i].fileName, name))
+			return files[i].inode_id;
+	}
+	return -1;
 }

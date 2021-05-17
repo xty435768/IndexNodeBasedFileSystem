@@ -11,6 +11,7 @@ Address a() {
 int main() 
 {
 	Disk disk;
+	//vector<string> vs = disk.stringSplit("/dir/hahaha/", "/");
 	disk.run();
 	DiskblockManager dm;
 	char c = 'd';
