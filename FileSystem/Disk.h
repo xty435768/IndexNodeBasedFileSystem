@@ -230,10 +230,14 @@ public:
 	short applyChangesForNewDirectory(iNode,const char*);
 	bool freeBlockCheck(int,const char*);
 	void listDirectory(iNode);
-	void printCurrentDirectory();
+	void printCurrentDirectory(const char* ="\0");
+	std::string getFullFilePath(iNode, const char* = "\0");
 	std::string getFileName(iNode);
 	bool changeDirectory(const char*);
 	std::vector<std::string> stringSplit(const std::string&, const std::string&);
+	short locateInodeFromPath(std::string);
+	void recursiveDeleteDirectory(iNode);
+	bool deleteFile(iNode);
 private:
 	superBlock super;
 	DiskblockManager dbm;

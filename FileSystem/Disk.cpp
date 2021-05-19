@@ -83,7 +83,7 @@ void Disk::parse(char* str)
 		
 
 	}
-	else if (!strcmp(command, "createDir")) {
+	else if (!strcmp(command, "createDir") || !strcmp(command, "mkdir")) {
 		char* path = strtok(NULL, " ");
 		if (path == NULL) {
 			cout << "lack of path" << endl;
@@ -119,6 +119,7 @@ void Disk::parse(char* str)
 			}
 		    
 		}
+		
 		printf("Create directory successful!\n");
 
 	}
@@ -131,12 +132,12 @@ void Disk::parse(char* str)
 		char* redundant = strtok(NULL, " ");
 		if (redundant != NULL) {
 			cout << "more arguments than expected" << endl;
-			return;
+			return; 
 		}
 		//TODO: implement deleting file
 
 	}
-	else if (!strcmp(command, "deleteDir")) {
+	else if (!strcmp(command, "deleteDir") || !strcmp(command, "rmdir")) {
 		char* path = strtok(NULL, " ");
 		if (path == NULL) {
 			cout << "lack of path" << endl;
@@ -147,11 +148,15 @@ void Disk::parse(char* str)
 			cout << "more arguments than expected" << endl;
 			return;
 		}
-		//TODO: implement deleting directory. 
-		//current working directory should not be deleted.
-
+		iNode directoryToBeDelete = super.loadInode(locateInodeFromPath(string(path)), diskFile);
+		if (directoryToBeDelete.inode_id == currentInode.inode_id) {
+			printf("You cannot delete current working directory: ");
+			printCurrentDirectory("\n");
+			return;
+		}
+		recursiveDeleteDirectory(directoryToBeDelete);
 	}
-	else if (!strcmp(command, "changeDir")) {
+	else if (!strcmp(command, "changeDir") || !strcmp(command, "cd")) {
 		char* path = strtok(NULL, " ");
 		if (path == NULL) {
 			cout << "lack of path" << endl;
@@ -178,7 +183,7 @@ void Disk::parse(char* str)
 			return;
 		}
 		listDirectory(currentInode);
-
+		printf("Current directory file size: %d\n", currentInode.fileSize);
 	}
 	else if (!strcmp(command, "cp")) {
 		char* path1 = strtok(NULL, " ");
@@ -206,6 +211,7 @@ void Disk::parse(char* str)
 			return;
 		}
 		dbm.printBlockUsage(&super, diskFile);
+		printf("Inode usage: %d/%d (%.2f%%)\n", super.inodeNumber - super.freeInodeNumber, super.inodeNumber, 100 * (super.inodeNumber - super.freeInodeNumber) / (double)super.inodeNumber);
 	}
 	else if (!strcmp(command, "cat")) {
 		char* path = strtok(NULL, " ");
@@ -221,6 +227,9 @@ void Disk::parse(char* str)
 		//TODO: implementing printing the content of file.
 
 	}
+	else if (!strcmp(command, "cls")) {
+	    system("cls");
+    }
 	else 
     {
 	    printf("Unknown command! Please check again!\n");
@@ -270,6 +279,7 @@ void Disk::run()
 				getchar();
 				if (!strcmp(command, "exit"))break;
 				parse(command);
+				currentInode = super.loadInode(currentInode.inode_id, diskFile);
 			}
 		}
 		else {
@@ -723,27 +733,34 @@ void Disk::listDirectory(iNode directory_inode)
 	for (size_t i = 0; i < dir.files.size(); i++)
 	{
 		in = super.loadInode(dir.files[i].inode_id);
-		printf("%s\t\t%d\t\t\t%s\t%s\t%d\n", dir.files[i].fileName, in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
+		printf("%s%s%d\t\t\t%s\t%s\t%d\n", dir.files[i].fileName, (strlen(dir.files[i].fileName) >= 8 ? "\t" : "\t\t"), in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
 	}
 	printf("\n");
 }
 
-void Disk::printCurrentDirectory()
+void Disk::printCurrentDirectory(const char* end)
 {
-	iNode inode = currentInode;
+	printf("%s", getFullFilePath(currentInode, end).c_str());
+}
+
+string Disk::getFullFilePath(iNode inode, const char* end)
+{
+	string result = "/";
 	stack<string> directories;
 	while (inode.inode_id != 0)
 	{
 		directories.push(getFileName(inode));
 		inode = super.loadInode(inode.parent, diskFile);
 	}
-	printf("/");
 	while (!directories.empty()) {
-		printf("%s/", directories.top().c_str());
+		result += (directories.top() + "/");
 		directories.pop();
 	}
-	printf(" ");
+	result += (" " + string(end));
+	return result;
 }
+
+
 
 string Disk::getFileName(iNode inode)
 {
@@ -786,6 +803,115 @@ vector<string> Disk::stringSplit(const string& str, const string& pattern)
 	return vector<string> {
 		sregex_token_iterator(str.begin(), str.end(), re, -1),sregex_token_iterator()
 	};
+}
+
+short Disk::locateInodeFromPath(std::string path)
+{
+	vector<string> pathList = stringSplit(path, "/");
+	short inode_id_ptr = currentInode.inode_id;
+	for (size_t i = 0; i < pathList.size(); i++)
+	{
+		if (pathList[i] == "") continue;
+		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+		Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
+		short nextDirectoryInode = dir.findInFileEntries(pathList[i].c_str());
+		if (nextDirectoryInode != -1) {
+			inode_id_ptr = nextDirectoryInode;
+		}
+		else return -1;
+	}
+	return inode_id_ptr;
+}
+
+void Disk::recursiveDeleteDirectory(iNode inode)
+{
+	if (inode.fileSize == 2 * sizeof(fileEntry)) {
+		string filePath = getFullFilePath(inode);
+		if (deleteFile(inode))
+		{
+			printf("File/Directory deleted successful: %s\n", filePath.c_str());
+		}
+		else {
+			printf("File/Directory deleted failed: %s\n", filePath.c_str());
+		}
+		return;
+	}
+	Directory dir = readFileEntriesFromDirectoryFile(inode);
+	for (size_t i = 0; i < dir.files.size(); i++)
+	{
+		if (!strcmp(dir.files[i].fileName, ".") || !strcmp(dir.files[i].fileName, ".."))
+			continue;
+		recursiveDeleteDirectory(super.loadInode(dir.files[i].inode_id, diskFile));
+	}
+	string filePath = getFullFilePath(inode);
+	if (deleteFile(inode))
+	{
+		printf("File/Directory deleted successful: %s\n", filePath.c_str());
+	}
+	else {
+		printf("File/Directory deleted failed: %s\n", filePath.c_str());
+	}
+	return;
+}
+
+bool Disk::deleteFile(iNode inode)
+{
+	int blockCount = (int)ceil((double)inode.fileSize / super.BLOCK_SIZE);
+	if (blockCount <= DIRECT_ADDRESS_NUMBER) {
+		for (size_t i = 0; i < blockCount; i++)
+		{
+			freeBlock(inode.direct[i], diskFile);
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < DIRECT_ADDRESS_NUMBER; i++)
+		{
+			freeBlock(inode.direct[i], diskFile);
+		}
+		IndirectDiskblock idb;
+		idb.load(inode.indirect);
+		int remainDataBlock = blockCount - DIRECT_ADDRESS_NUMBER;
+		for (size_t i = 0; i < remainDataBlock; i++)
+		{
+			freeBlock(idb.addrs[i]);
+		}
+		freeBlock(inode.indirect);
+	}
+	super.freeInode(inode.inode_id, diskFile);
+	iNode parent_inode = super.loadInode(inode.parent, diskFile);
+	Directory parent_dir = readFileEntriesFromDirectoryFile(parent_inode);
+	for (size_t i = 0; i < parent_dir.files.size(); i++)
+	{
+		if (parent_dir.files[i].inode_id == inode.inode_id)
+		{
+			parent_dir.files.erase(parent_dir.files.begin() + i);
+		}
+	}
+	int parent_block_count = (int)ceil((double)parent_inode.fileSize / super.BLOCK_SIZE);
+	if (parent_block_count <= DIRECT_ADDRESS_NUMBER)
+	{
+		if (parent_inode.fileSize % super.BLOCK_SIZE == sizeof(fileEntry)) {
+			freeBlock(parent_inode.direct[parent_block_count - 1], diskFile);
+		}
+	}
+	else {
+		IndirectDiskblock idb;
+		idb.load(parent_inode.indirect, diskFile);
+		if (parent_inode.fileSize == DIRECT_ADDRESS_NUMBER * super.BLOCK_SIZE + sizeof(fileEntry)) {
+			freeBlock(idb.addrs[parent_block_count - 1 - DIRECT_ADDRESS_NUMBER], diskFile);
+			freeBlock(parent_inode.indirect, diskFile);
+			parent_inode.indirect = Address(0);
+		}
+		else if (parent_inode.fileSize % super.BLOCK_SIZE == sizeof(fileEntry)) {
+			freeBlock(idb.addrs[parent_block_count - 1 - DIRECT_ADDRESS_NUMBER], diskFile);
+			idb.addrs[parent_block_count - 1 - DIRECT_ADDRESS_NUMBER] = Address(0);
+		}
+	}
+	parent_inode.fileSize -= sizeof(fileEntry);
+	if (!super.writeInode(parent_inode, diskFile)) { printf("Failed to update parent inode (id: %d)!\n", parent_inode.inode_id); return false; }
+	if (!writeFileEntriesToDirectoryFile(parent_dir, parent_inode)) { printf("Failed to update parent directory file (inode id: %d)!\n", parent_inode.inode_id); return false; }
+	return true;
 }
 
 iNode superBlock::loadInode(short id,FILE* file)
