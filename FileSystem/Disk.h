@@ -122,6 +122,7 @@ public:
 	time_t inode_create_time;
 	time_t inode_access_time;
 	time_t inode_modify_time;
+	bool isDir;
 
 	int parent;
 	int inode_id;
@@ -129,7 +130,7 @@ public:
 	Address direct[DIRECT_ADDRESS_NUMBER];
 	Address indirect;
 
-	iNode(unsigned, int, int);
+	iNode(unsigned, int, int, bool=true);
 	iNode() {}
 	void updateCreateTime();
 	void updateModifiedTime();
@@ -226,7 +227,7 @@ public:
 
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
-	int createDirectoryUnderInode(iNode&, const char*);
+	int createUnderInode(iNode&, const char*, bool=true);
 	short applyChangesForNewDirectory(iNode,const char*);
 	bool freeBlockCheck(int,const char*);
 	void listDirectory(iNode);

@@ -93,6 +93,12 @@ void Disk::parse(char* str)
 			printf("The directory name is too long! Maximum length: %d.\n", MAXIMUM_FILENAME_LENGTH - 1);
 			return;
 		}
+		char* redundant = strtok(NULL, " ");
+		if (redundant != NULL) {
+			cout << "more arguments than expected" << endl;
+			return;
+		}
+
 		if (!regex_match(string(path), fileNamePattern))
 		{
 			printf("Your file name does not meet the specification. "
@@ -111,16 +117,19 @@ void Disk::parse(char* str)
 				inode_id_ptr = nextDirectoryInode;
 			}
 			else {
-				inode_id_ptr = createDirectoryUnderInode(inode_ptr, pathList[i].c_str());
+				inode_id_ptr = createUnderInode(inode_ptr, pathList[i].c_str());
 				if (inode_id_ptr == -1) {
 					printf("Create directory failed!\n");
 					return;
 				}
+				printf("Create directory successful!\n");
+				return;
 			}
 		    
 		}
+		printf("dir already exists!\n");
+		return;
 		
-		printf("Create directory successful!\n");
 
 	}
 	else if (!strcmp(command, "deleteFile")) {
@@ -544,7 +553,7 @@ bool Disk::writeFileEntriesToDirectoryFile(Directory d, iNode inode)
 	return true;
 }
 
-int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
+int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 {
 	/*1、只占用直接块，不需要申请新块
 	2、只占用直接块，需要申请新块
@@ -575,20 +584,24 @@ int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 		return -1;
 	}
 	unsigned newFileSizeOfCurrentDirectory = parent.fileSize + sizeof(fileEntry);
-	int newInodeForNewDirectory = -1;
+	int newInode = -1;
 	if (parent.fileSize < super.BLOCK_SIZE * DIRECT_ADDRESS_NUMBER)
 	{
 		if (parent.fileSize % super.BLOCK_SIZE != 0) {
 			//1、只占用直接块，父目录文件不需要申请新块，需要给新文件夹一个block
-			int block_required = 0;
+			int block_required = 0; //只是父文件夹的需求量
 			if (freeBlockCheck(block_required, name))
 			{
-				//应用新文件夹的更改
-				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1)return -1;
+				//应用新文件(夹)的更改
+				if(isDir)
+					newInode = applyChangesForNewDirectory(parent, name);
+				else {
+					//TODO: applyChangesForNewFile(blablabla)
+				}
+				if (newInode == -1)return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
-				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent_dir.files.push_back(fileEntry(name, newInode));
 				parent.fileSize += sizeof(fileEntry);
 				parent.updateModifiedTime();
 				super.writeInode(parent, diskFile);
@@ -602,12 +615,16 @@ int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 			int block_required = 1;
 			if (freeBlockCheck(block_required, name))
 			{
-				//应用新文件夹的更改
-				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1)return -1;
+				//应用新文件(夹)的更改
+				if (isDir)
+					newInode = applyChangesForNewDirectory(parent, name);
+				else {
+					//TODO: applyChangesForNewFile(blablabla)
+				}
+				if (newInode == -1)return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
-				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent_dir.files.push_back(fileEntry(name, newInode));
 				parent.fileSize += sizeof(fileEntry);
 				parent.updateModifiedTime();
 				Address newBlockForParentDirectory = allocateNewBlock(diskFile);
@@ -624,12 +641,16 @@ int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 		int block_required = 2;
 		if (freeBlockCheck(block_required, name))
 		{
-			//应用新文件夹的更改
-			newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-			if (newInodeForNewDirectory == -1) return -1;
+			//应用新文件(夹)的更改
+			if (isDir)
+				newInode = applyChangesForNewDirectory(parent, name);
+			else {
+				//TODO: applyChangesForNewFile(blablabla)
+			}
+			if (newInode == -1) return -1;
 			//应用父文件夹的更改
 			Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
-			parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+			parent_dir.files.push_back(fileEntry(name, newInode));
 			parent.fileSize += sizeof(fileEntry);
 			parent.updateModifiedTime();
 			Address newIndirectAddressBlockForParentDirectory = allocateNewBlock(diskFile);
@@ -649,12 +670,16 @@ int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 			//4、占用间接块，不需要申请新块
 			int block_required = 0;
 			if (freeBlockCheck(block_required, name)) {
-				//应用新文件夹的更改
-				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1) return -1;
+				//应用新文件(夹)的更改
+				if (isDir)
+					newInode = applyChangesForNewDirectory(parent, name);
+				else {
+					//TODO: applyChangesForNewFile(blablabla)
+				}
+				if (newInode == -1) return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
-				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent_dir.files.push_back(fileEntry(name, newInode));
 				parent.fileSize += sizeof(fileEntry);
 				parent.updateModifiedTime();
 				super.writeInode(parent, diskFile);
@@ -666,12 +691,16 @@ int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 			//5、占用间接块，需要申请新块
 			int block_required = 1;
 			if (freeBlockCheck(block_required, name)) {
-				//应用新文件夹的更改
-				newInodeForNewDirectory = applyChangesForNewDirectory(parent, name);
-				if (newInodeForNewDirectory == -1) return -1;
+				//应用新文件(夹)的更改
+				if (isDir)
+					newInode = applyChangesForNewDirectory(parent, name);
+				else {
+					//TODO: applyChangesForNewFile(blablabla)
+				}
+				if (newInode == -1) return -1;
 				//应用父文件夹的更改
 				Directory parent_dir = readFileEntriesFromDirectoryFile(parent);
-				parent_dir.files.push_back(fileEntry(name, newInodeForNewDirectory));
+				parent_dir.files.push_back(fileEntry(name, newInode));
 				parent.fileSize += sizeof(fileEntry);
 				parent.updateModifiedTime();
 				Address newIndirectBlockForParentDirectory = allocateNewBlock(diskFile);
@@ -685,7 +714,7 @@ int Disk::createDirectoryUnderInode(iNode& parent, const char* name)
 			else return -1;
 		}
 	}
-	return newInodeForNewDirectory;
+	return newInode;
 }
 
 short Disk::applyChangesForNewDirectory(iNode parent, const char* name)
@@ -807,6 +836,7 @@ vector<string> Disk::stringSplit(const string& str, const string& pattern)
 
 short Disk::locateInodeFromPath(std::string path)
 {
+	//当前工作目录为起点
 	vector<string> pathList = stringSplit(path, "/");
 	short inode_id_ptr = currentInode.inode_id;
 	for (size_t i = 0; i < pathList.size(); i++)
@@ -1094,7 +1124,7 @@ void IndirectDiskblock::write(Address blockAddr,FILE* file)  // still untested
 	if (!specify_FILE_object) fclose(file);
 }
 
-iNode::iNode(unsigned fileSize, int parent, int inode_id)
+iNode::iNode(unsigned fileSize, int parent, int inode_id, bool isDir)
 {
 	updateCreateTime();
 	updateModifiedTime();
@@ -1102,6 +1132,7 @@ iNode::iNode(unsigned fileSize, int parent, int inode_id)
 	this->fileSize = fileSize;
 	this->parent = parent;
 	this->inode_id = inode_id;
+	this->isDir = isDir;
 }
 
 void iNode::updateCreateTime()
