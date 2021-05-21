@@ -1,4 +1,5 @@
 #pragma once
+#include <iostream>
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
@@ -98,10 +99,10 @@ public:
 	void refreshContent();
 	Diskblock(int addrInt); 
 	Diskblock(Address addr); 
-	void load(int addrInt,FILE* = NULL);// load a block from disk given an address to the content buffer
-	void load(Address addr, FILE* = NULL);// load a block from disk given an address to the content buffer
-	void write(int addrInt, FILE* = NULL);  // write the content buffer to the specific disk block
-	void write(Address addr, FILE* = NULL);  // write the content buffer to the specific disk block
+	void load(int addrInt,FILE* = NULL, int = 1024);// load a block from disk given an address to the content buffer
+	void load(Address addr, FILE* = NULL, int = 1024);// load a block from disk given an address to the content buffer
+	void write(int addrInt, FILE* = NULL, int = 1024);  // write the content buffer to the specific disk block
+	void write(Address addr, FILE* = NULL, int = 1024);  // write the content buffer to the specific disk block
 
 };
 
@@ -172,7 +173,7 @@ public:
 
 	Address freeptr;
 	
-	int allocateNewInode(unsigned, int, Address[], Address*, FILE* = NULL);
+	int allocateNewInode(unsigned, int, Address[], Address*, FILE* = NULL, bool=true);
 	bool freeInode(int, FILE* = NULL);
 	bool updateSuperBlock(FILE* = NULL);
 
@@ -208,6 +209,7 @@ struct Directory {
 	short findInFileEntries(const char*);
 };
 
+
 class Disk
 {
 public:
@@ -227,8 +229,9 @@ public:
 
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
-	int createUnderInode(iNode&, const char*, bool=true);
-	short applyChangesForNewDirectory(iNode,const char*);
+	int createUnderInode(iNode&, const char*, bool=true, unsigned=0);
+	short applyChangesForNewDirectory(iNode);
+	short applyChangesForNewFile(iNode, unsigned);
 	bool freeBlockCheck(int,const char*);
 	void listDirectory(iNode);
 	void printCurrentDirectory(const char* ="\0");

@@ -74,6 +74,7 @@ void Disk::parse(char* str)
 			cout << "lack of size" << endl;
 			return;
 		}
+		unsigned fileSize = atoi(size);
 		char* redundant = strtok(NULL, " ");
 		if (redundant != NULL) {
 			cout << "more arguments than expected" << endl;
@@ -81,6 +82,50 @@ void Disk::parse(char* str)
 		}
 		//TODO: implement creating file
 		
+		if (!regex_match(string(path), fileNamePattern))
+		{
+			printf("Your file name does not meet the specification. "
+				"The file name can only consist of uppercase or lowercase English letters, numbers or underscores\n");
+			return;
+		}
+		vector<string> pathList = stringSplit(string(path), "/");
+		vector<string>::iterator iter = pathList.begin();
+		// erase empty string
+		for (; iter != pathList.end(); iter++) {
+			if (*iter == "")
+				iter = pathList.erase(iter);
+		}
+
+		int inode_id_ptr = currentInode.inode_id;
+		for (size_t i = 0; i < pathList.size(); i++)
+		{
+			iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
+			short nextInode = dir.findInFileEntries(pathList[i].c_str());
+			if (nextInode != -1) {
+				inode_id_ptr = nextInode;
+			}
+			else {
+				if (i != pathList.size() - 1) {
+					inode_id_ptr = createUnderInode(inode_ptr, pathList[i].c_str());
+				}
+				else {
+					inode_id_ptr = createUnderInode(inode_ptr, pathList[i].c_str(), false, fileSize);
+				}
+				if (inode_id_ptr == -1) {
+					printf("Create file failed!\n");
+					return;
+				}
+				if (i == pathList.size() - 1) {
+					printf("Create file successfully!\n");
+					return;
+				}
+			}
+		}
+		// todo create new file
+		printf("File already exists!\n");
+		return;
+
 
 	}
 	else if (!strcmp(command, "createDir") || !strcmp(command, "mkdir")) {
@@ -110,7 +155,7 @@ void Disk::parse(char* str)
 		for (size_t i = 0; i < pathList.size(); i++)
 		{
 			if (pathList[i] == "") continue;
-			iNode inode_ptr = super.loadInode(inode_id_ptr,diskFile);
+			iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
 			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 			short nextDirectoryInode = dir.findInFileEntries(pathList[i].c_str());
 			if (nextDirectoryInode != -1) {
@@ -122,12 +167,13 @@ void Disk::parse(char* str)
 					printf("Create directory failed!\n");
 					return;
 				}
-				printf("Create directory successful!\n");
-				return;
+				if (i == pathList.size() - 1) {
+					printf("create directory successfully!\n");
+					return;
+				}
 			}
-		    
 		}
-		printf("dir already exists!\n");
+		printf("directory already exists\n");
 		return;
 		
 
@@ -233,7 +279,68 @@ void Disk::parse(char* str)
 			cout << "more arguments than expected" << endl;
 			return;
 		}
+
 		//TODO: implementing printing the content of file.
+
+		if (!regex_match(string(path), fileNamePattern))
+		{
+			printf("Your file name does not meet the specification. "
+				"The file name can only consist of uppercase or lowercase English letters, numbers or underscores\n");
+			return;
+		}
+		vector<string> pathList = stringSplit(string(path), "/");
+		vector<string>::iterator iter = pathList.begin();
+		// erase empty string
+		for (; iter != pathList.end(); iter++) {
+			if (*iter == "")
+				iter = pathList.erase(iter);
+		}
+
+		int inode_id_ptr = currentInode.inode_id;
+		for (size_t i = 0; i < pathList.size(); i++)
+		{
+			iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
+			short nextInode = dir.findInFileEntries(pathList[i].c_str());
+			if (nextInode != -1) {
+				inode_id_ptr = nextInode;
+			}
+			else {
+				printf("file doesn\'t exist!\n");
+				return;
+			}
+
+		}
+		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+		int blockRequired = (int)ceil(inode_ptr.fileSize / 1024.0);
+		int directNum = min(blockRequired, 10);
+		int indirectIndexedNum = max(0, blockRequired - directNum);
+		int offset = inode_ptr.fileSize % 1024; // bytes in the last block
+		if (offset == 0) offset = 1024;
+		
+		Diskblock db;
+		for (int i = 0; i < directNum - 1; i++) {
+			db.load(inode_ptr.direct[i], diskFile);
+			printf("%.1024s", (char *)(db.content));
+		}
+		if (indirectIndexedNum > 0) {
+			db.load(inode_ptr.direct[directNum - 1], diskFile);
+			printf("%.1024s", (char*)(db.content));
+			IndirectDiskblock idb;
+			idb.load(inode_ptr.indirect, diskFile);
+			for (int i = 0; i < indirectIndexedNum - 1; i++) {
+				db.load(idb.addrs[i], diskFile);
+				printf("%.1024s", (char*)(db.content));
+			}
+			db.load(idb.addrs[indirectIndexedNum - 1], diskFile, offset);
+			printf("%.*s", offset, (char*)(db.content));
+		}
+		else {
+			db.load(inode_ptr.direct[directNum - 1], diskFile, offset);
+			printf("%.*s", offset, (char*)(db.content));
+		}
+		return;
+
 
 	}
 	else if (!strcmp(command, "cls")) {
@@ -247,7 +354,7 @@ void Disk::parse(char* str)
 
 Disk::Disk()
 {
-	fileNamePattern = regex("^([a-z]|[A-Z]|[_/]|[0-9])*$");
+	fileNamePattern = regex("^([a-z]|[A-Z]|[_/.]|[0-9])*$");
 }
 
 Disk::~Disk()
@@ -553,7 +660,7 @@ bool Disk::writeFileEntriesToDirectoryFile(Directory d, iNode inode)
 	return true;
 }
 
-int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
+int Disk::createUnderInode(iNode& parent, const char* name, bool isDir, unsigned fileSize)
 {
 	/*1、只占用直接块，不需要申请新块
 	2、只占用直接块，需要申请新块
@@ -594,9 +701,9 @@ int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 			{
 				//应用新文件(夹)的更改
 				if(isDir)
-					newInode = applyChangesForNewDirectory(parent, name);
+					newInode = applyChangesForNewDirectory(parent);
 				else {
-					//TODO: applyChangesForNewFile(blablabla)
+					newInode = applyChangesForNewFile(parent,  fileSize);
 				}
 				if (newInode == -1)return -1;
 				//应用父文件夹的更改
@@ -617,9 +724,9 @@ int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 			{
 				//应用新文件(夹)的更改
 				if (isDir)
-					newInode = applyChangesForNewDirectory(parent, name);
+					newInode = applyChangesForNewDirectory(parent);
 				else {
-					//TODO: applyChangesForNewFile(blablabla)
+					newInode = applyChangesForNewFile(parent, fileSize);
 				}
 				if (newInode == -1)return -1;
 				//应用父文件夹的更改
@@ -643,9 +750,9 @@ int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 		{
 			//应用新文件(夹)的更改
 			if (isDir)
-				newInode = applyChangesForNewDirectory(parent, name);
+				newInode = applyChangesForNewDirectory(parent);
 			else {
-				//TODO: applyChangesForNewFile(blablabla)
+				newInode = applyChangesForNewFile(parent, fileSize);
 			}
 			if (newInode == -1) return -1;
 			//应用父文件夹的更改
@@ -672,9 +779,9 @@ int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 			if (freeBlockCheck(block_required, name)) {
 				//应用新文件(夹)的更改
 				if (isDir)
-					newInode = applyChangesForNewDirectory(parent, name);
+					newInode = applyChangesForNewDirectory(parent);
 				else {
-					//TODO: applyChangesForNewFile(blablabla)
+					newInode = applyChangesForNewFile(parent, fileSize);
 				}
 				if (newInode == -1) return -1;
 				//应用父文件夹的更改
@@ -693,9 +800,9 @@ int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 			if (freeBlockCheck(block_required, name)) {
 				//应用新文件(夹)的更改
 				if (isDir)
-					newInode = applyChangesForNewDirectory(parent, name);
+					newInode = applyChangesForNewDirectory(parent);
 				else {
-					//TODO: applyChangesForNewFile(blablabla)
+					newInode = applyChangesForNewFile(parent, fileSize);
 				}
 				if (newInode == -1) return -1;
 				//应用父文件夹的更改
@@ -717,7 +824,7 @@ int Disk::createUnderInode(iNode& parent, const char* name, bool isDir)
 	return newInode;
 }
 
-short Disk::applyChangesForNewDirectory(iNode parent, const char* name)
+short Disk::applyChangesForNewDirectory(iNode parent)
 {
 	// return: new inode id for new directory
 	Address newBlockForNewDirectory = allocateNewBlock(diskFile);
@@ -734,6 +841,57 @@ short Disk::applyChangesForNewDirectory(iNode parent, const char* name)
 		return -1;
 	}
 	return newInodeForNewDirectory;
+}
+
+short Disk::applyChangesForNewFile(iNode parent, unsigned fileSize)
+{
+	// return new inode id for new file
+	int blockRequired = ceil(fileSize / 1024.0);
+	int directNum = min(blockRequired, 10);
+	int indirectIndexedNum = max(0, blockRequired - directNum);
+	bool indirectRequired = blockRequired > 10;
+	Address* direct = NULL, *indirect = NULL;
+
+	direct = new Address[directNum];
+	for (int i = 0; i < directNum; i++) {
+		direct[i] = allocateNewBlock(diskFile);
+	}
+	if (indirectIndexedNum > 0) {
+		indirect = new Address();
+		*indirect = allocateNewBlock(diskFile);
+		IndirectDiskblock idb;
+		for (int i = 0; i < indirectIndexedNum; i++) {
+			idb.addrs[i] = allocateNewBlock();
+		}
+		idb.write(*indirect, diskFile);
+	}
+	
+	// fill the file with random strings.
+	srand(time(NULL));
+	for (int i = 0; i < directNum; i++) {
+		Diskblock db;
+		for (int b = 0; b < 1024; b++) {
+			db.content[b] = 'a' + (rand() % 26);
+		}
+		db.write(direct[i], diskFile);
+	}
+	if (indirectIndexedNum > 0) {
+		IndirectDiskblock idb;
+		idb.load(*indirect);
+		for (int i = 0; i < indirectIndexedNum; i++) {
+			Diskblock db;
+			for (int b = 0; b < 1024; b++) {
+				db.content[b] = 'a' + (rand() % 26);
+			}
+			db.write(idb.addrs[i], diskFile);
+		}
+	}
+
+	int newInode = super.allocateNewInode(fileSize, parent.inode_id, direct, indirect, diskFile, false);
+
+	delete[] direct;
+	delete indirect;
+	return newInode;
 }
 
 bool Disk::freeBlockCheck(int blockRequirementOfparent, const char* newDirectoryName)
@@ -987,7 +1145,7 @@ superBlock::superBlock()
 	memset(inodeMap, 0, sizeof(inodeMap));
 }
 
-int superBlock::allocateNewInode(unsigned fileSize, int parent, Address direct[], Address* indirect, FILE* file)
+int superBlock::allocateNewInode(unsigned fileSize, int parent, Address direct[], Address* indirect, FILE* file, bool isDir)
 {
 	bool specify_FILE_object = file != NULL;
 
@@ -1007,7 +1165,7 @@ int superBlock::allocateNewInode(unsigned fileSize, int parent, Address direct[]
 		}
 	}
 	inodeMap[arrayIndex] |= (1 << (7 - offset));
-	iNode inode(fileSize, parent, arrayIndex * 8 + offset);
+	iNode inode(fileSize, parent, arrayIndex * 8 + offset, isDir);
 	if (fileSize <= DIRECT_ADDRESS_NUMBER * BLOCK_SIZE)
 	{
 		for (size_t i = 1; i <= ceil((double)fileSize / BLOCK_SIZE); i++)
@@ -1024,7 +1182,7 @@ int superBlock::allocateNewInode(unsigned fileSize, int parent, Address direct[]
 	}
 	
 	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
-	if (fileSeek(file, inodeStart + inode.inode_id * INODE_SIZE,SEEK_SET)) return -2;
+	if (fileSeek(file, inodeStart + inode.inode_id * INODE_SIZE, SEEK_SET)) return -2;
 	if (fileWrite(&inode, sizeof iNode, 1, file) != 1) return -2;
 	if (!specify_FILE_object) { fclose(file); file = NULL; }
 	freeInodeNumber--;
@@ -1070,33 +1228,33 @@ Diskblock::Diskblock(Address addr)
 	load(addr);
 }
 
-void Diskblock::load(int addrInt, FILE* file)
+void Diskblock::load(int addrInt, FILE* file, int numByte)
 {
 	refreshContent();
 	bool specify_FILE_object = file != NULL;
 	if(!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
 	fileSeek(file, addrInt, SEEK_SET);
-	fileRead(content, sizeof content, 1, file);
+	fileRead(content, numByte, 1, file);
 	if (!specify_FILE_object) fclose(file);
 }
 
-void Diskblock::load(Address addr, FILE* file)
+void Diskblock::load(Address addr, FILE* file, int numByte)
 {
 	int addrInt = addr.to_int();
 	load(addrInt, file);
 }
 
-void Diskblock::write(int addrInt, FILE* file)
+void Diskblock::write(int addrInt, FILE* file, int numByte)
 {
 	bool specify_FILE_object = file != NULL;
 	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
 	fileSeek(file, addrInt, SEEK_SET);
-	fileWrite(content, sizeof content, 1, file);
+	fileWrite(content, numByte, 1, file);
 	if (!specify_FILE_object) fclose(file);
 	refreshContent();
 }
 
-void Diskblock::write(Address addr, FILE* file)
+void Diskblock::write(Address addr, FILE* file, int numByte)
 {
 
 	int addrInt = addr.to_int();
