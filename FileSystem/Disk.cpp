@@ -759,10 +759,23 @@ void Disk::listDirectory(iNode directory_inode)
 	printCurrentDirectory();
 	printf("\nFile Name\tFile Size(Bytes)\tCreate Time\t\t\tModified Time\t\t\tInode ID\n");
 	iNode in;
+	string fileName;
+	const char* c = "asdfasdfasdfas";
 	for (size_t i = 0; i < dir.files.size(); i++)
 	{
+		fileName = string(dir.files[i].fileName);
 		in = super.loadInode(dir.files[i].inode_id);
-		printf("%s%s%d\t\t\t%s\t%s\t%d\n", dir.files[i].fileName, (strlen(dir.files[i].fileName) >= 8 ? "\t" : "\t\t"), in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
+		for (size_t j = 0; j < (int)ceil((double)fileName.size() / 14); j++)
+		{
+			if (j == 0)
+			{
+				printf("%s%s%d\t\t\t%s\t%s\t%d\n", fileName.substr(0,14).c_str(), (fileName.size() >= 8 ? "\t" : "\t\t"), in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
+			}
+			else {
+				printf("%s\n", fileName.substr(j * 14, 14).c_str());
+			}
+		}
+		//printf("%s%s%d\t\t\t%s\t%s\t%d\n", c, (strlen(c) >= 8 ? "\t" : "\t\t"), in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
 	}
 	printf("\n");
 }
