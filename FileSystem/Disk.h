@@ -229,10 +229,18 @@ public:
 
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
-	int createUnderInode(iNode&, const char*, bool=true, unsigned=0);
+	int createUnderInode(iNode&, const char*, int);
 	short applyChangesForNewDirectory(iNode);
 	short applyChangesForNewFile(iNode, unsigned);
-	bool freeBlockCheck(int,const char*);
+
+	int parentBlockRequired(iNode&);
+	bool freeBlockCheck(int);
+	bool freeInodeCheck();
+	int blockUsedBy(iNode&);
+	int inodeUsedBy(iNode&);
+	void copy(iNode&, const char*, iNode&); // copy directory or file
+	short copyFile(iNode&, iNode&);
+
 	void listDirectory(iNode);
 	void printCurrentDirectory(const char* ="\0");
 	std::string getFullFilePath(iNode, const char* = "\0");
