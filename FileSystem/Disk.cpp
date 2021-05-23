@@ -1042,19 +1042,37 @@ int Disk::inodeUsedBy(iNode& inode_ptr)
 	return ret;
 }
 
-void Disk::copy(iNode& source, const char* srcName, iNode& target){
+void Disk::copy(iNode& source, const char* name, iNode& target){
+
+	// check duplicates
+	bool checkDuplicate = false;
+	Directory parent_dir = readFileEntriesFromDirectoryFile(target);
+	for (size_t i = 0; i < parent_dir.files.size(); i++)
+	{
+		if (!strcmp(parent_dir.files[i].fileName, name))
+		{
+			checkDuplicate = true;
+			break;
+		}
+	}
+	if (checkDuplicate) {
+		printf("File/Directory with same name is exist: %s\nPlease change another name!\n", name);
+		return;
+	}
+
 	if (!source.isDir) {
 		// TODO: copy file to target
 		int newFileId = copyFile(source, target);
-		newFileId = createUnderInode(target, srcName, newFileId);
+		newFileId = createUnderInode(target, name, newFileId);
 		return;
 	}
 	// TODO: if source is dir, create dir with same name
 	//       and copy child files.
 
+
 	
 	int newDirId = applyChangesForNewDirectory(target); // create directory in the target directory
-	newDirId = createUnderInode(target, srcName, newDirId);
+	newDirId = createUnderInode(target, name, newDirId);
 
 	iNode newDir = super.loadInode(newDirId, diskFile);
 	Directory src = readFileEntriesFromDirectoryFile(source); // read child inode in the source directory.
