@@ -63,7 +63,7 @@ void Disk::parse(char* str)
 		return;
 	}
 	
-	if (!strcmp(command, "createFile")) {
+	if (!strcmp(command, "createFile") || !strcmp(command, "mkfile")) {
 		char* path = strtok(NULL, " ");
 		if (path == NULL) {
 			cout << "lack of path" << endl;
@@ -75,6 +75,10 @@ void Disk::parse(char* str)
 			return;
 		}
 		unsigned fileSize = atoi(size);
+		if (fileSize == 0) {
+			printf("Wrong file size format or file size is 0! Please check again!\n");
+			return;
+		}
 		char* redundant = strtok(NULL, " ");
 		if (redundant != NULL) {
 			cout << "more arguments than expected" << endl;
@@ -119,8 +123,8 @@ void Disk::parse(char* str)
 				else {
 					// check free blocks and free inodes for files
 					int parentRequired = parentBlockRequired(inode_ptr);
-					int newRequired = ceil(fileSize / 1024.0);
-					if (newRequired > 10) newRequired++;
+					int newRequired = ceil(fileSize / (double)super.BLOCK_SIZE);
+					if (newRequired > DIRECT_ADDRESS_NUMBER) newRequired++;
 					if (!freeBlockCheck(parentRequired + newRequired)) return;
 					if (!freeInodeCheck()) return;
 
@@ -203,7 +207,7 @@ void Disk::parse(char* str)
 		
 
 	}
-	else if (!strcmp(command, "deleteFile")) {
+	else if (!strcmp(command, "deleteFile") || !strcmp(command, "rmfile")) {
 		char* path = strtok(NULL, " ");
 		if (path == NULL) {
 			cout << "lack of path" << endl;
@@ -214,7 +218,24 @@ void Disk::parse(char* str)
 			cout << "more arguments than expected" << endl;
 			return; 
 		}
-		//TODO: implement deleting file
+		short targetFileInodeID = locateInodeFromPath(string(path));
+		if (targetFileInodeID == -1) {
+			printf("File not found: %s\n", path);
+			return;
+		}
+		iNode fileToBeDelete = super.loadInode(targetFileInodeID, diskFile);
+		if (fileToBeDelete.isDir) {
+			printf("%s is a direcotry!\n",path);
+			printf("You can use 'rmdir' command to delete a direcotry!\n");
+			return;
+		}
+		if (deleteFile(fileToBeDelete))
+		{
+			printf("File deleted successfully: %s\n", path);
+		}
+		else {
+			printf("Failed to delete the file: %s\n", path);
+		}
 
 	}
 	else if (!strcmp(command, "deleteDir") || !strcmp(command, "rmdir")) {
@@ -228,7 +249,17 @@ void Disk::parse(char* str)
 			cout << "more arguments than expected" << endl;
 			return;
 		}
-		iNode directoryToBeDelete = super.loadInode(locateInodeFromPath(string(path)), diskFile);
+		short targetDirectoryInodeID = locateInodeFromPath(string(path));
+		if (targetDirectoryInodeID == -1) {
+			printf("Directory not found: %s\n", path);
+			return;
+		}
+		iNode directoryToBeDelete = super.loadInode(targetDirectoryInodeID, diskFile);
+		if (!directoryToBeDelete.isDir) {
+			printf("%s is a file!\n",path);
+			printf("You can use 'rmfile' command to delete a file!\n");
+			return;
+		}
 		if (directoryToBeDelete.inode_id == currentInode.inode_id) {
 			printf("You cannot delete current working directory: ");
 			printCurrentDirectory("\n");
@@ -329,7 +360,7 @@ void Disk::parse(char* str)
 		int blockRequired = blockUsedBy(srcInode),
 			parentRequired = parentBlockRequired(tgtInode);
 		int iNodeRequired = inodeUsedBy(srcInode);
-		printf("blockRequired %d, iNodeRequired %d", blockRequired, iNodeRequired);
+		printf("blockRequired %d, iNodeRequired %d\n", blockRequired, iNodeRequired);
 		if (!freeBlockCheck(blockRequired + parentRequired)) return;
 		if (iNodeRequired > super.freeInodeNumber) {
 			printf("not enough free inode left\n");
@@ -339,13 +370,19 @@ void Disk::parse(char* str)
 		
 	}
 	else if (!strcmp(command, "sum")) {
+	
 		char* redundant = strtok(NULL, " ");
 		if (redundant != NULL) {
 			cout << "more arguments than expected" << endl;
 			return;
 		}
+		printf("Calculating...");
+		unsigned spaceForFiles = getDirectorySize(super.loadInode(0, diskFile));
+		unsigned spaceUsed = dbm.getDedicateBlock(&super, diskFile) * super.BLOCK_SIZE + spaceForFiles;
+		printf("\r");
+		printf("Space usage (Bytes): %d/%d (%.4f%%)\n", spaceUsed, super.TOTAL_SIZE, 100 * spaceUsed / (double)super.TOTAL_SIZE);
+		printf("Inode usage: %d/%d (%.4f%%)\n", super.inodeNumber - super.freeInodeNumber, super.inodeNumber, 100 * (super.inodeNumber - super.freeInodeNumber) / (double)super.inodeNumber);
 		dbm.printBlockUsage(&super, diskFile);
-		printf("Inode usage: %d/%d (%.2f%%)\n", super.inodeNumber - super.freeInodeNumber, super.inodeNumber, 100 * (super.inodeNumber - super.freeInodeNumber) / (double)super.inodeNumber);
 	}
 	else if (!strcmp(command, "cat")) {
 		char* path = strtok(NULL, " ");
@@ -389,12 +426,18 @@ void Disk::parse(char* str)
 			}
 
 		}
+		
 		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
-		int blockRequired = (int)ceil(inode_ptr.fileSize / 1024.0);
-		int directNum = min(blockRequired, 10);
+		if (inode_ptr.isDir) {
+			listDirectory(inode_ptr);
+			return;
+		}
+		printf("Content of %s: \n\n", getFullFilePath(inode_ptr).c_str());
+		int blockRequired = (int)ceil(inode_ptr.fileSize / (double)super.BLOCK_SIZE);
+		int directNum = min(blockRequired, DIRECT_ADDRESS_NUMBER);
 		int indirectIndexedNum = max(0, blockRequired - directNum);
-		int offset = inode_ptr.fileSize % 1024; // bytes in the last block
-		if (offset == 0) offset = 1024;
+		int offset = inode_ptr.fileSize % super.BLOCK_SIZE; // bytes in the last block
+		if (offset == 0) offset = super.BLOCK_SIZE;
 		
 		Diskblock db;
 		for (int i = 0; i < directNum - 1; i++) {
@@ -417,14 +460,18 @@ void Disk::parse(char* str)
 			db.load(inode_ptr.direct[directNum - 1], diskFile, offset);
 			printf("%.*s", offset, (char*)(db.content));
 		}
-		printf('\n');
+		printf("\n");
 		return;
 
 
 	}
 	else if (!strcmp(command, "cls")) {
 	    system("cls");
+		printWelcomeInfo();
     }
+	else if (!strcmp(command, "help")) {
+	    printHelpInfo();
+	}
 	else 
     {
 	    printf("Unknown command! Please check again!\n");
@@ -464,8 +511,8 @@ void Disk::run()
 			printf("Root inode modify time:%s\n", currentInode.getModifiedTime().c_str());
 			printf("Root file size:%d\n", currentInode.fileSize);
 			printf("Root file start at (direct block addresss):%d\n", currentInode.direct[0].to_int());
-			
-
+			system("cls");
+			printWelcomeInfo();
 			while (true) {
 				printCurrentDirectory();
 				printf("#");
@@ -500,7 +547,7 @@ bool Disk::loadDisk()
 		magic_number_test[sizeof(magic_number) - 1] = '\0';
 		if (strcmp(magic_number_test, magic_number))
 		{
-			cout << "Invalid file!!" << endl;
+			cout << "Magic number error! Invalid file!!" << endl;
 			return false;
 		}
 		if (fileSeek(file, sizeof(magic_number) - 1, SEEK_SET)) return false;
@@ -512,7 +559,6 @@ bool Disk::loadDisk()
 		diskFile = file;
 		dbm.freeptr = super.freeptr;
 		delete[] magic_number_test;
-		//fclose(file);
 		return true;
 	}
 	else
@@ -527,33 +573,13 @@ bool Disk::loadDisk()
 		if (fileSeek(file, 0, SEEK_SET)) return false;
 		if (fileWrite(magic_number,sizeof(magic_number),1,file) != 1) return false;
 
-		//super.inodeNumber = INITIAL_INODE_NUMBER;
-		//super.freeInodeNumber = INITIAL_INODE_NUMBER;
-		//super.dataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
-		//super.freeDataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
-		//super.BLOCK_SIZE = INITIAL_BLOCK_SIZE;
-		//super.INODE_SIZE = INITIAL_INODE_SIZE;
-		////super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE - sizeof(magic_number) + 1;
-		//super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE;
-		//super.superBlockStart = sizeof(magic_number) - 1;
-		//super.TOTAL_SIZE = INITIAL_DISK_SIZE;
-		////super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
-		////super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
-		////super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
-		//
-		//super.inodeStart = INITIAL_SUPERBLOCK_SIZE;
-		//super.blockStart = super.inodeStart + super.inodeNumber * INITIAL_INODE_SIZE;
 		dbm.initialize(&super, file);
 		super.freeptr = dbm.freeptr;
 		super.freeDataBlockNumber = dbm.getFreeBlock(file);
-		//if (fileSeek(file, super.superBlockStart, SEEK_SET)) return false;
-		//if (fileWrite(&super, sizeof(superBlock), 1, file) != 1) return false;
 		diskFile = file;
 		printf("Initializing root directory...\n");
 		initializeRootDirectory();
 		
-
-		//fclose(file);
 		return true;
 	}
 }
@@ -883,10 +909,10 @@ short Disk::applyChangesForNewDirectory(iNode parent)
 short Disk::applyChangesForNewFile(iNode parent, unsigned fileSize)
 {
 	// return new inode id for new file
-	int blockRequired = ceil(fileSize / 1024.0);
-	int directNum = min(blockRequired, 10);
+	int blockRequired = ceil(fileSize / (double)super.BLOCK_SIZE);
+	int directNum = min(blockRequired, DIRECT_ADDRESS_NUMBER);
 	int indirectIndexedNum = max(0, blockRequired - directNum);
-	bool indirectRequired = blockRequired > 10;
+	bool indirectRequired = blockRequired > DIRECT_ADDRESS_NUMBER;
 	//freeBlockCheck(blockRequired + indirectRequired)
 	Address* direct = NULL, *indirect = NULL;
 
@@ -908,7 +934,7 @@ short Disk::applyChangesForNewFile(iNode parent, unsigned fileSize)
 	srand(time(NULL));
 	for (int i = 0; i < directNum; i++) {
 		Diskblock db;
-		for (int b = 0; b < 1024; b++) {
+		for (int b = 0; b < super.BLOCK_SIZE; b++) {
 			db.content[b] = 'a' + (rand() % 26);
 		}
 		db.write(direct[i], diskFile);
@@ -918,7 +944,7 @@ short Disk::applyChangesForNewFile(iNode parent, unsigned fileSize)
 		idb.load(*indirect);
 		for (int i = 0; i < indirectIndexedNum; i++) {
 			Diskblock db;
-			for (int b = 0; b < 1024; b++) {
+			for (int b = 0; b < super.BLOCK_SIZE; b++) {
 				db.content[b] = 'a' + (rand() % 26);
 			}
 			db.write(idb.addrs[i], diskFile);
@@ -994,8 +1020,8 @@ int Disk::blockUsedBy(iNode& inode_ptr)
 			ret += blockUsedBy(child_inode);
 		}
 	}
-	int blockUsed = ceil(inode_ptr.fileSize / 1024.0);
-	bool indirectUsed = blockUsed > 10;
+	int blockUsed = ceil(inode_ptr.fileSize / (double)super.BLOCK_SIZE);
+	bool indirectUsed = blockUsed > DIRECT_ADDRESS_NUMBER;
 
 	return ret + blockUsed + indirectUsed;
 }
@@ -1046,8 +1072,8 @@ short Disk::copyFile(iNode& source, iNode& target)
 {
 	// allocate disk blocks for new file
 	unsigned fileSize = source.fileSize;
-	int blockRequired = ceil(fileSize / 1024.0);
-	int directNum = min(blockRequired, 10);
+	int blockRequired = ceil(fileSize / (double)super.BLOCK_SIZE);
+	int directNum = min(blockRequired, DIRECT_ADDRESS_NUMBER);
 	int indirectIndexNum = max(0, blockRequired - directNum);
 
 	Address* direct = NULL, * indirect = NULL;
@@ -1125,6 +1151,7 @@ void Disk::printCurrentDirectory(const char* end)
 
 string Disk::getFullFilePath(iNode inode, const char* end)
 {
+	string lastChar = (inode.isDir ? "/" : "");
 	string result = "/";
 	stack<string> directories;
 	while (inode.inode_id != 0)
@@ -1132,8 +1159,9 @@ string Disk::getFullFilePath(iNode inode, const char* end)
 		directories.push(getFileName(inode));
 		inode = super.loadInode(inode.parent, diskFile);
 	}
+	
 	while (!directories.empty()) {
-		result += (directories.top() + "/");
+		result += (directories.top() + (directories.size() == 1 ? lastChar : "/"));
 		directories.pop();
 	}
 	result += (" " + string(end));
@@ -1161,20 +1189,18 @@ string Disk::getFileName(iNode inode)
 
 bool Disk::changeDirectory(const char* destination)
 {
-	Directory current_dir = readFileEntriesFromDirectoryFile(currentInode);
-	if (destination[0] == '/')
-		destination += 1;
-	size_t i;
-	for (i = 0; i < current_dir.files.size(); i++)
-	{
-		if (!strcmp(current_dir.files[i].fileName, destination))
-		{
-			currentInode = super.loadInode(current_dir.files[i].inode_id, diskFile);
-			return true;
-		}
+	short destination_id = locateInodeFromPath(destination);
+	if (destination_id == -1) {
+		printf("Directory not found: %s\n", destination);
+		return false;
 	}
-	printf("No such directory!\n");
-	return false;
+	iNode destination_inode = super.loadInode(destination_id,diskFile);
+	if (!destination_inode.isDir) {
+		printf("%s is a file! Not a directory!\n", destination);
+		return false;
+	}
+	currentInode = destination_inode;
+	return true;
 }
 
 vector<string> Disk::stringSplit(const string& str, const string& pattern)
@@ -1293,6 +1319,54 @@ bool Disk::deleteFile(iNode inode)
 	if (!super.writeInode(parent_inode, diskFile)) { printf("Failed to update parent inode (id: %d)!\n", parent_inode.inode_id); return false; }
 	if (!writeFileEntriesToDirectoryFile(parent_dir, parent_inode)) { printf("Failed to update parent directory file (inode id: %d)!\n", parent_inode.inode_id); return false; }
 	return true;
+}
+
+unsigned Disk::getDirectorySize(iNode current)
+{
+	if ((current.isDir && current.fileSize == 2 * sizeof(fileEntry)) || !current.isDir)
+	{
+		return current.fileSize;
+	}
+	Directory dir = readFileEntriesFromDirectoryFile(current);
+	unsigned sum = current.fileSize;
+	for (size_t i = 0; i < dir.files.size(); i++)
+	{
+		iNode child = super.loadInode(dir.files[i].inode_id, diskFile);
+		if (child.inode_id == current.parent || child.inode_id == current.inode_id) continue;
+		sum += getDirectorySize(child);
+	}
+	return sum;
+}
+
+void Disk::printWelcomeInfo()
+{
+
+     printf("#################################################\n");
+     printf("#    Index-node-based File Management System    #\n");
+     printf("#                  Version 1.0                  #\n");
+     printf("#                                               #\n");
+     printf("#                 Developed by:                 #\n");
+     printf("#         Tianyi Xiang    Haorui  Song          #\n");
+     printf("#         201836020389    201830581404          #\n");
+     printf("#################################################\n");
+     printf("#   School of Computer Science and Engineering  #\n");
+     printf("#      South China University of Technology     #\n");
+     printf("#################################################\n");
+	 printf("\nYou can input 'help' to get command instructions!\n");
+	 printf("\n");
+}
+
+void Disk::printHelpInfo()
+{
+	printf("Create a file: createFile/mkfile fileName fileSize(in KB) \neg. mkfile /mydir/hello.txt 10\n\n");
+	printf("Delete a file£ºdeleteFile/rmfile filename \neg. rmfile /mydir/hello.txt\n\n");
+	printf("Create a directory: createDir/mkdir dirName\neg. mkdir /dir1/sub1\n\n");
+	printf("Delete a directory: deleteDir/rmdir dirName\neg. rmdir /dir1/sub1\n\n");
+	printf("Change current working directory: changeDir/cd dirName\neg. cd dir2\n\n");
+	printf("List directory: dir\n\n");
+	printf("Copy file: cp sourceFile targetFile\neg. cp /dir1/sub1/hello.txt /dir2/sub2/hello.txt\n\n");
+	printf("Display the usage of storage space£ºsum\n\n");
+	printf("Print out file contents: cat fileName\neg. cat /dir1/file1\n\n");
 }
 
 iNode superBlock::loadInode(short id,FILE* file)
@@ -1579,7 +1653,7 @@ void DiskblockManager::free(Address freeAddr, FILE* file)  // addr is the freed 
 	}
 	else {
 		Address newNodeAddr = iblock.addrs[NUM_INDIRECT_ADDRESSES - 1];  // get the last free-address in the block.
-		cout << "new linked-list block" << newNodeAddr.to_int() << endl;
+		cout << "new linked-list block " << newNodeAddr.to_int() << endl;
 		iblock.load(newNodeAddr,file);  
 		memset(iblock.addrs, 0, sizeof iblock.addrs);
 		iblock.addrs[0] = blockAddr;
@@ -1591,21 +1665,9 @@ void DiskblockManager::free(Address freeAddr, FILE* file)  // addr is the freed 
 
 void DiskblockManager::printBlockUsage(superBlock* super,FILE* file)
 {
-	/*int freeBlock = 0, linkedListBlock= 0;
-	Address ptr = freeptr.block_addr();
-	IndirectDiskblock iblock;
-	iblock.load(ptr,file);
-	do
-	{
-		linkedListBlock += 1;
-		ptr = iblock.addrs[0];
-		iblock.load(ptr,file);
-	} while (ptr != iblock.addrs[0]);
-	linkedListBlock += 1;
-	freeBlock = (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;*/
 	int linkedListBlock = getLinkedListBlock(file);
 	int freeBlock = getFreeBlock(linkedListBlock);
-	cout << "free block: " << freeBlock << endl;
+	printf("Block usage: %d/%d (%.4f%%)\n", super->TOTAL_SIZE / super->BLOCK_SIZE - freeBlock, super->TOTAL_SIZE / super->BLOCK_SIZE, 100 * (super->TOTAL_SIZE / super->BLOCK_SIZE - freeBlock) / (double)(super->TOTAL_SIZE / super->BLOCK_SIZE));
 	cout << "blocks for linked list: " << linkedListBlock << endl;
 	cout << "blocks used for data: " << (super->TOTAL_SIZE - super->SUPERBLOCK_SIZE - super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE
 		- freeBlock - linkedListBlock << endl;
@@ -1637,6 +1699,11 @@ int DiskblockManager::getLinkedListBlock(FILE* file)
 	} while (ptr != iblock.addrs[0]);
 	linkedListBlock += 1;
 	return linkedListBlock;
+}
+
+int DiskblockManager::getDedicateBlock(superBlock* super, FILE* file)
+{
+	return getLinkedListBlock(file) + (super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE + super->SUPERBLOCK_SIZE / super->BLOCK_SIZE;
 }
 
 fileEntry::fileEntry(const char* fname, short inode_id)

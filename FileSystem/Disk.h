@@ -37,7 +37,7 @@ size_t fileRead(void* buffer, size_t elementSize, size_t elementCount, FILE* fil
 size_t fileWrite(const void* buffer, size_t elementSize, size_t elementCount, FILE* file, bool error_close_require = false);
 int filePutCharacter(int character, FILE* file);
 
-const char magic_number[] = "tyhrhsfs";
+const char magic_number[] = "xtyshrfs";
 
 struct Address
 {
@@ -194,6 +194,7 @@ public:
 	int getFreeBlock(FILE*);
 	int getFreeBlock(int);
 	int getLinkedListBlock(FILE*);
+	int getDedicateBlock(superBlock*,FILE*);
 };
 struct fileEntry {
 	char fileName[MAXIMUM_FILENAME_LENGTH];
@@ -250,6 +251,9 @@ public:
 	short locateInodeFromPath(std::string);
 	void recursiveDeleteDirectory(iNode);
 	bool deleteFile(iNode);
+	unsigned getDirectorySize(iNode);
+	void printWelcomeInfo();
+	void printHelpInfo();
 private:
 	superBlock super;
 	DiskblockManager dbm;
