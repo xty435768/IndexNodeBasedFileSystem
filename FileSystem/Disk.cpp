@@ -1234,13 +1234,7 @@ void Disk::recursiveDeleteDirectory(iNode inode)
 {
 	if (inode.fileSize == 2 * sizeof(fileEntry)) {
 		string filePath = getFullFilePath(inode);
-		if (deleteFile(inode))
-		{
-			printf("File/Directory deleted successful: %s\n", filePath.c_str());
-		}
-		else {
-			printf("File/Directory deleted failed: %s\n", filePath.c_str());
-		}
+		printf("Directory deleted %s: %s\n", (deleteFile(inode) ? "successful" : "failed"), filePath.c_str());
 		return;
 	}
 	Directory dir = readFileEntriesFromDirectoryFile(inode);
@@ -1248,16 +1242,16 @@ void Disk::recursiveDeleteDirectory(iNode inode)
 	{
 		if (!strcmp(dir.files[i].fileName, ".") || !strcmp(dir.files[i].fileName, ".."))
 			continue;
-		recursiveDeleteDirectory(super.loadInode(dir.files[i].inode_id, diskFile));
+		iNode current_inode_ptr = super.loadInode(dir.files[i].inode_id, diskFile);
+		if (current_inode_ptr.isDir) {
+			recursiveDeleteDirectory(super.loadInode(dir.files[i].inode_id, diskFile));
+		}
+		else {
+			printf("File deleted %s: %s\n", (deleteFile(current_inode_ptr) ? "successful" : "failed"), getFullFilePath(current_inode_ptr).c_str());
+		}
 	}
 	string filePath = getFullFilePath(inode);
-	if (deleteFile(inode))
-	{
-		printf("File/Directory deleted successful: %s\n", filePath.c_str());
-	}
-	else {
-		printf("File/Directory deleted failed: %s\n", filePath.c_str());
-	}
+	printf("Directory deleted %s: %s\n", (deleteFile(inode) ? "successful" : "failed"), filePath.c_str());
 	return;
 }
 
