@@ -99,7 +99,13 @@ void Disk::parse(char* str)
 			if (*iter == "")
 				iter = pathList.erase(iter);
 		}
-
+		for (size_t i = 0; i < pathList.size(); i++)
+		{
+			if (pathList[i].length() > MAXIMUM_FILENAME_LENGTH - 1) {
+				printf("The directory/file name: %s is too long! Maximum length: %d.\n", pathList[i].c_str(), MAXIMUM_FILENAME_LENGTH - 1);
+				return;
+			}
+		}
 		int inode_id_ptr = currentInode.inode_id;
 		for (size_t i = 0; i < pathList.size(); i++)
 		{
@@ -153,10 +159,6 @@ void Disk::parse(char* str)
 			cout << "lack of path" << endl;
 			return;
 		}
-		if (strlen(path) > MAXIMUM_FILENAME_LENGTH - 1) {
-			printf("The directory name is too long! Maximum length: %d.\n", MAXIMUM_FILENAME_LENGTH - 1);
-			return;
-		}
 		char* redundant = strtok(NULL, " ");
 		if (redundant != NULL) {
 			cout << "more arguments than expected" << endl;
@@ -173,6 +175,13 @@ void Disk::parse(char* str)
 		}
 
 		vector<string> pathList = stringSplit(string(path), "/");
+		for (size_t i = 0; i < pathList.size(); i++)
+		{
+			if (pathList[i].length() > MAXIMUM_FILENAME_LENGTH - 1) {
+				printf("The directory/file name: %s is too long! Maximum length: %d.\n", pathList[i].c_str(), MAXIMUM_FILENAME_LENGTH - 1);
+				return;
+			}
+		}
 		int inode_id_ptr = currentInode.inode_id;
 		for (size_t i = 0; i < pathList.size(); i++)
 		{
@@ -294,7 +303,7 @@ void Disk::parse(char* str)
 			return;
 		}
 		listDirectory(currentInode);
-		printf("Current directory file size: %d\n", currentInode.fileSize);
+		printf("Current directory file size: %d\n\n", currentInode.fileSize);
 	}
 	else if (!strcmp(command, "cp")) {
 		char* srcPath = strtok(NULL, " ");
@@ -460,7 +469,8 @@ void Disk::parse(char* str)
 			db.load(inode_ptr.direct[directNum - 1], diskFile, offset);
 			printf("%.*s", offset, (char*)(db.content));
 		}
-		printf("\n");
+		printf("\n\n");
+		printf("File size: %d Byte(s)\n",inode_ptr.fileSize);
 		return;
 
 
@@ -1137,8 +1147,9 @@ short Disk::copyFile(iNode& source, iNode& target)
 void Disk::listDirectory(iNode directory_inode)
 {
 	Directory dir = readFileEntriesFromDirectoryFile(directory_inode);
-	printf("\nCurrent working directory: ");
-	printCurrentDirectory();
+	//printf("\nCurrent working directory: ");
+	//printCurrentDirectory();
+	printf("\nFile(s) and directory(s) of %s :\n",getFullFilePath(directory_inode).c_str());
 	printf("\nFile Name\tFile Size(Bytes)\tCreate Time\t\t\tModified Time\t\t\tInode ID\n");
 	iNode in;
 	string fileName;
@@ -1262,7 +1273,7 @@ void Disk::recursiveDeleteDirectory(iNode inode)
 			continue;
 		iNode current_inode_ptr = super.loadInode(dir.files[i].inode_id, diskFile);
 		if (current_inode_ptr.isDir) {
-			recursiveDeleteDirectory(super.loadInode(dir.files[i].inode_id, diskFile));
+			recursiveDeleteDirectory(current_inode_ptr);
 		}
 		else {
 			printf("File deleted %s: %s\n", (deleteFile(current_inode_ptr) ? "successful" : "failed"), getFullFilePath(current_inode_ptr).c_str());
