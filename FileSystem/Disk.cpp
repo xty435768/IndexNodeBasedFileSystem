@@ -421,7 +421,7 @@ void Disk::parse(char* str)
 				inode_id_ptr = nextInode;
 			}
 			else {
-				printf("file doesn\'t exist!\n");
+				printf("File not found: %s\n",path);
 				return;
 			}
 
