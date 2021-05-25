@@ -1251,17 +1251,40 @@ short Disk::locateInodeFromPath(std::string path)
 {
 	//当前工作目录为起点
 	vector<string> pathList = stringSplit(path, "/");
-	short inode_id_ptr = currentInode.inode_id;
-	for (size_t i = 0; i < pathList.size(); i++)
+	//remove all empty string
+	vector<string>::iterator it = pathList.begin();
+	while (it != pathList.end())
 	{
-		if (pathList[i] == "") continue;
-		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+		if ((*it) == "") it = pathList.erase(it);
+		else it++;
+	}
+	short inode_id_ptr = currentInode.inode_id;
+	short pathListHeadInodeID = readFileEntriesFromDirectoryFile(currentInode).findInFileEntries(pathList[0].c_str());
+	if (pathListHeadInodeID == -1) {
+		printf("%s not found!\n", pathList[0].c_str());
+		return -1;
+	}
+	iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+
+	for (int i = 0; i < pathList.size(); i++)
+	{
+		if (!inode_ptr.isDir) {
+			if (i == pathList.size() - 1) {
+				return inode_ptr.inode_id;
+			}
+			else
+			{
+				printf("Locating file/directory failed! %s is not a directory!\n",getFileName(inode_ptr).c_str());
+				return -1;
+			}
+		}
 		Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 		short nextDirectoryInode = dir.findInFileEntries(pathList[i].c_str());
 		if (nextDirectoryInode != -1) {
 			inode_id_ptr = nextDirectoryInode;
 		}
 		else return -1;
+		inode_ptr = super.loadInode(inode_id_ptr, diskFile);
 	}
 	return inode_id_ptr;
 }
@@ -1283,7 +1306,8 @@ void Disk::recursiveDeleteDirectory(iNode inode)
 			recursiveDeleteDirectory(current_inode_ptr);
 		}
 		else {
-			printf("File deleted %s: %s\n", (deleteFile(current_inode_ptr) ? "successful" : "failed"), getFullFilePath(current_inode_ptr).c_str());
+			string filePath = getFullFilePath(current_inode_ptr);
+			printf("File deleted %s: %s\n", (deleteFile(current_inode_ptr) ? "successful" : "failed"), filePath.c_str());
 		}
 	}
 	string filePath = getFullFilePath(inode);
