@@ -93,12 +93,6 @@ void Disk::parse(char* str)
 			return;
 		}
 		vector<string> pathList = stringSplit(string(path), "/");
-		vector<string>::iterator iter = pathList.begin();
-		// erase empty string
-		for (; iter != pathList.end(); iter++) {
-			if (*iter == "")
-				iter = pathList.erase(iter);
-		}
 		for (size_t i = 0; i < pathList.size(); i++)
 		{
 			if (pathList[i].length() > MAXIMUM_FILENAME_LENGTH - 1) {
@@ -110,6 +104,10 @@ void Disk::parse(char* str)
 		for (size_t i = 0; i < pathList.size(); i++)
 		{
 			iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+			if (!inode_ptr.isDir) {
+				printf("%s is a file! You can not create directory under here!\n", getFileName(inode_ptr).c_str());
+				return;
+			}
 			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 			short nextInode = dir.findInFileEntries(pathList[i].c_str());
 			if (nextInode != -1) {
@@ -185,8 +183,11 @@ void Disk::parse(char* str)
 		int inode_id_ptr = currentInode.inode_id;
 		for (size_t i = 0; i < pathList.size(); i++)
 		{
-			if (pathList[i] == "") continue;
 			iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+			if (!inode_ptr.isDir) {
+				printf("%s is a file! You can not create directory under here!\n", getFileName(inode_ptr).c_str());
+				return;
+			}
 			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 			short nextDirectoryInode = dir.findInFileEntries(pathList[i].c_str());
 			if (nextDirectoryInode != -1) {
@@ -288,11 +289,11 @@ void Disk::parse(char* str)
 			return;
 		}
 		if (changeDirectory(path)) {
-			printf("Directory has changed to %s\n", path);
+			printf("Directory has changed to %s\n", getFullFilePath(currentInode).c_str());
 		}
 		else
 		{
-			printf("Change directory failed!\n", path);
+			printf("Change directory failed!\n");
 		}
 		
 	}
@@ -324,20 +325,15 @@ void Disk::parse(char* str)
 		//TODO: implementing coping file or dir
 		vector<string> srcPathList = stringSplit(string(srcPath), "/");
 		vector<string> tgtPathList = stringSplit(string(tgtPath), "/");
-		vector<string>::iterator iter;
-		// erase empty string
-		for (iter = srcPathList.begin(); iter != srcPathList.end(); iter++) {
-			if (*iter == "")
-				iter = srcPathList.erase(iter);
-		}
-		for (iter = tgtPathList.begin(); iter != tgtPathList.end(); iter++) {
-			if (*iter == "")
-				iter = tgtPathList.erase(iter);
-		}
 		int srcId = currentInode.inode_id;
 		
 		for (int i = 0; i < srcPathList.size(); i++) {
 			iNode inode_ptr = super.loadInode(srcId, diskFile);
+			if (!inode_ptr.isDir) {
+				printf("%s is a file! Please check your source path again!\n", getFileName(inode_ptr).c_str());
+				printf("Copy failed!\n");
+				return;
+			}
 			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 			short nextInode = dir.findInFileEntries(srcPathList[i].c_str());
 			if (nextInode != -1) {
@@ -345,12 +341,18 @@ void Disk::parse(char* str)
 			}
 			else {
 				printf("source path doesn't exist!\n");
+				printf("Copy failed!\n");
 				return;
 			}
 		}
 		int tgtId = currentInode.inode_id;
 		for (int i = 0; i < tgtPathList.size() - 1; i++) {
 			iNode inode_ptr = super.loadInode(tgtId, diskFile);
+			if (!inode_ptr.isDir) {
+				printf("%s is a file! Please check your target path again!\n", getFileName(inode_ptr).c_str());
+				printf("Copy failed!\n");
+				return;
+			}
 			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 			short nextInode = dir.findInFileEntries(tgtPathList[i].c_str());
 			if (nextInode != -1) {
@@ -364,7 +366,11 @@ void Disk::parse(char* str)
 		const char* fileName = tgtPathList[tgtPathList.size() - 1].c_str();
 		iNode srcInode = super.loadInode(srcId, diskFile);
 		iNode tgtInode = super.loadInode(tgtId, diskFile);
-
+		if (!tgtInode.isDir) {
+			printf("%s is a file! Please check your target path again!\n", getFileName(tgtInode).c_str());
+			printf("Copy failed!\n");
+			return;
+		}
 		// check freeInodes and freeBlocks
 		int blockRequired = blockUsedBy(srcInode),
 			parentRequired = parentBlockRequired(tgtInode);
@@ -418,30 +424,9 @@ void Disk::parse(char* str)
 				"The file name can only consist of uppercase or lowercase English letters, numbers or underscores\n");
 			return;
 		}
-		vector<string> pathList = stringSplit(string(path), "/");
-		vector<string>::iterator iter = pathList.begin();
-		// erase empty string
-		for (; iter != pathList.end(); iter++) {
-			if (*iter == "")
-				iter = pathList.erase(iter);
-		}
 
-		int inode_id_ptr = currentInode.inode_id;
-		for (size_t i = 0; i < pathList.size(); i++)
-		{
-			iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
-			Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
-			short nextInode = dir.findInFileEntries(pathList[i].c_str());
-			if (nextInode != -1) {
-				inode_id_ptr = nextInode;
-			}
-			else {
-				printf("File not found: %s\n",path);
-				return;
-			}
-
-		}
-		
+		short inode_id_ptr = locateInodeFromPath(path);
+		if (inode_id_ptr == -1) return;
 		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
 		if (inode_ptr.isDir) {
 			listDirectory(inode_ptr);
@@ -1242,49 +1227,39 @@ bool Disk::changeDirectory(const char* destination)
 vector<string> Disk::stringSplit(const string& str, const string& pattern)
 {
 	regex re(pattern);
-	return vector<string> {
+	vector<string> splitResult = vector<string> {
 		sregex_token_iterator(str.begin(), str.end(), re, -1),sregex_token_iterator()
 	};
+	//remove all empty string
+	vector<string>::iterator it = splitResult.begin();
+	while (it != splitResult.end())
+	{
+		if ((*it) == "") it = splitResult.erase(it);
+		else it++;
+	}
+	return splitResult;
 }
 
 short Disk::locateInodeFromPath(std::string path)
 {
-	//当前工作目录为起点
 	vector<string> pathList = stringSplit(path, "/");
-	//remove all empty string
-	vector<string>::iterator it = pathList.begin();
-	while (it != pathList.end())
-	{
-		if ((*it) == "") it = pathList.erase(it);
-		else it++;
-	}
 	short inode_id_ptr = currentInode.inode_id;
-	short pathListHeadInodeID = readFileEntriesFromDirectoryFile(currentInode).findInFileEntries(pathList[0].c_str());
-	if (pathListHeadInodeID == -1) {
-		printf("%s not found!\n", pathList[0].c_str());
-		return -1;
-	}
-	iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
-
-	for (int i = 0; i < pathList.size(); i++)
+	for (size_t i = 0; i < pathList.size(); i++)
 	{
+		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
 		if (!inode_ptr.isDir) {
-			if (i == pathList.size() - 1) {
-				return inode_ptr.inode_id;
-			}
-			else
-			{
-				printf("Locating file/directory failed! %s is not a directory!\n",getFileName(inode_ptr).c_str());
-				return -1;
-			}
+			printf("%s is a file! Please check your path again!\n", getFileName(inode_ptr).c_str());
+			return -1;
 		}
 		Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
 		short nextDirectoryInode = dir.findInFileEntries(pathList[i].c_str());
 		if (nextDirectoryInode != -1) {
 			inode_id_ptr = nextDirectoryInode;
 		}
-		else return -1;
-		inode_ptr = super.loadInode(inode_id_ptr, diskFile);
+		else { 
+			printf("File/Directory not found: %s\n", pathList[i].c_str());
+			return -1; 
+		}
 	}
 	return inode_id_ptr;
 }
