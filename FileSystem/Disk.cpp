@@ -372,10 +372,16 @@ void Disk::parse(char* str)
 		printf("blockRequired %d, iNodeRequired %d\n", blockRequired, iNodeRequired);
 		if (!freeBlockCheck(blockRequired + parentRequired)) return;
 		if (iNodeRequired > super.freeInodeNumber) {
-			printf("not enough free inode left\n");
+			printf("Not enough free inode left!\n");
+			printf("Copy failed!\n");
 			return;
 		}
-		copy(srcInode, fileName, tgtInode);
+		if (copy(srcInode, fileName, tgtInode)) {
+			printf("Copy successfully!\n");
+		}
+		else {
+			printf("Copy failed!\n");
+		}
 		
 	}
 	else if (!strcmp(command, "sum")) {
@@ -1052,7 +1058,7 @@ int Disk::inodeUsedBy(iNode& inode_ptr)
 	return ret;
 }
 
-void Disk::copy(iNode& source, const char* name, iNode& target){
+bool Disk::copy(iNode& source, const char* name, iNode& target){
 
 	// check duplicates
 	bool checkDuplicate = false;
@@ -1067,14 +1073,14 @@ void Disk::copy(iNode& source, const char* name, iNode& target){
 	}
 	if (checkDuplicate) {
 		printf("File/Directory with same name is exist: %s\nPlease change another name!\n", name);
-		return;
+		return false;
 	}
 
 	if (!source.isDir) {
 		// TODO: copy file to target
 		int newFileId = copyFile(source, target);
 		newFileId = createUnderInode(target, name, newFileId);
-		return;
+		return true;
 	}
 	// TODO: if source is dir, create dir with same name
 	//       and copy child files.
@@ -1094,6 +1100,7 @@ void Disk::copy(iNode& source, const char* name, iNode& target){
 		iNode child = super.loadInode(src.files[i].inode_id, diskFile);
 		copy(child, src.files[i].fileName, newDir);
 	}
+	return true;
 }
 
 short Disk::copyFile(iNode& source, iNode& target)
@@ -1150,7 +1157,7 @@ void Disk::listDirectory(iNode directory_inode)
 	//printf("\nCurrent working directory: ");
 	//printCurrentDirectory();
 	printf("\nFile(s) and directory(s) of %s :\n",getFullFilePath(directory_inode).c_str());
-	printf("\nFile Name\tFile Size(Bytes)\tCreate Time\t\t\tModified Time\t\t\tInode ID\n");
+	printf("\nFile Name\tFile Size\tFile Type\tCreate Time\t\t\tModified Time\t\t\tInode ID\n");
 	iNode in;
 	string fileName;
 	const char* c = "asdfasdfasdfas";
@@ -1162,7 +1169,7 @@ void Disk::listDirectory(iNode directory_inode)
 		{
 			if (j == 0)
 			{
-				printf("%s%s%d\t\t\t%s\t%s\t%d\n", fileName.substr(0,14).c_str(), (fileName.size() >= 8 ? "\t" : "\t\t"), in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
+				printf("%s%s%d B\t\t%s\t\t%s\t%s\t%d\n", fileName.substr(0,14).c_str(), (fileName.size() >= 8 ? "\t" : "\t\t"), in.fileSize, (in.isDir?"Dir":"File"), in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
 			}
 			else {
 				printf("%s\n", fileName.substr(j * 14, 14).c_str());

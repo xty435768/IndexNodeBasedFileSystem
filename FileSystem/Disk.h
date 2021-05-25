@@ -239,7 +239,7 @@ public:
 	bool freeInodeCheck();
 	int blockUsedBy(iNode&);
 	int inodeUsedBy(iNode&);
-	void copy(iNode&, const char*, iNode&); // copy directory or file
+	bool copy(iNode&, const char*, iNode&); // copy directory or file
 	short copyFile(iNode&, iNode&);
 
 	void listDirectory(iNode);
