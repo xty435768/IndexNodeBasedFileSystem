@@ -1646,25 +1646,54 @@ Address DiskblockManager::alloc(FILE* file)
 	Address blockAddr = freeptr.block_addr();
 	iblock.load(blockAddr,file);
 
-	// no free blocks
 	if (freeptr.offset().to_int() == 0) {
-		//perror("out of disk memory");
-		//exit(1);
-		printf("out of disk memory!\n");
-		return Address(0);
-	}
-	Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
-	iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
-	if (freeptr.offset().to_int() == 3) {
-		freeptr = iblock.addrs[0] + (NUM_INDIRECT_ADDRESSES - 1) * 3;
+		Address preBlockAddr = iblock.addrs[0];
+		// no free block
+		if (preBlockAddr == blockAddr) {
+			printf("out of disk memory!\n");
+			return Address(0);
+		}
 		memset(iblock.addrs, 0, sizeof iblock.addrs);
-		iblock.write(blockAddr,file);
+		iblock.write(blockAddr, file);
+		iblock.load(preBlockAddr, file);
+		freeptr = preBlockAddr + (NUM_INDIRECT_ADDRESSES - 1) * 3;
+		Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
+		iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
+		freeptr = freeptr - 3;
+		iblock.write(preBlockAddr, file);
+
+		return freeAddr;
 	}
 	else {
-		iblock.write(blockAddr,file);
+		Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
+		iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
 		freeptr = freeptr - 3;
+		iblock.write(blockAddr, file);
+
+		return freeAddr;
 	}
-	return freeAddr;
+
+
+
+	//// no free blocks
+	//if (freeptr.offset().to_int() == 0) {
+	//	//perror("out of disk memory");
+	//	//exit(1);
+	//	printf("out of disk memory!\n");
+	//	return Address(0);
+	//}
+	//Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
+	//iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
+	//if (freeptr.offset().to_int() == 3) {
+	//	freeptr = iblock.addrs[0] + (NUM_INDIRECT_ADDRESSES - 1) * 3;
+	//	memset(iblock.addrs, 0, sizeof iblock.addrs);
+	//	iblock.write(blockAddr,file);
+	//}
+	//else {
+	//	iblock.write(blockAddr,file);
+	//	freeptr = freeptr - 3;
+	//}
+	//return freeAddr;
 }
 
 void DiskblockManager::free(Address freeAddr, FILE* file)  // addr is the freed or afterused block address
