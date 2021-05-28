@@ -74,7 +74,7 @@ void Disk::parse(char* str)
 			cout << "lack of size" << endl;
 			return;
 		}
-		unsigned fileSize = atoi(size) * 1024;
+		unsigned fileSize = atof(size) * 1024;
 		if (fileSize == 0) {
 			printf("Wrong file size format or file size is 0! Please check again!\n");
 			return;
