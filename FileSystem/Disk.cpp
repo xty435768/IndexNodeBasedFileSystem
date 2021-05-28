@@ -1452,13 +1452,19 @@ int superBlock::allocateNewInode(unsigned fileSize, int parent, Address direct[]
 	if (!specify_FILE_object) file = fileOpen(DISK_PATH, "rb+");
 	int arrayIndex;
 	int offset;
+	bool found = false;
 	for (size_t i = 0; i < inodeNumber; i++)
 	{
 		arrayIndex = i / 8;
 		offset = i % 8;
 		if ((inodeMap[arrayIndex] >> (7 - offset)) % 2 == 0) {
+			found = true;
 			break;
 		}
+	}
+	if (!found) {
+		printf("No free index-node can be allocated!\n");
+		return -1;
 	}
 	inodeMap[arrayIndex] |= (1 << (7 - offset));
 	iNode inode(fileSize, parent, arrayIndex * 8 + offset, isDir);

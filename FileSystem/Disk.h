@@ -31,11 +31,11 @@
 // measured in "BYTES" 
 #define MAXIMUM_FILE_SIZE DIRECT_ADDRESS_NUMBER * INITIAL_BLOCK_SIZE + 1 * NUM_INDIRECT_ADDRESSES * INITIAL_BLOCK_SIZE
 
-int fileSeek(FILE* stream, long offSet, int fromWhere, bool error_close_require = false);
-FILE* fileOpen(const char* name, const char* mode, bool error_close_require = false);
-size_t fileRead(void* buffer, size_t elementSize, size_t elementCount, FILE* file, bool error_close_require = false);
-size_t fileWrite(const void* buffer, size_t elementSize, size_t elementCount, FILE* file, bool error_close_require = false);
-int filePutCharacter(int character, FILE* file);
+int fileSeek(FILE*, long, int, bool=false);
+FILE* fileOpen(const char*, const char*, bool=false);
+size_t fileRead(void*, size_t, size_t, FILE*, bool=false);
+size_t fileWrite(const void*, size_t, size_t, FILE*, bool= false);
+int filePutCharacter(int, FILE*);
 
 const char magic_number[] = "xtyshrfs";
 
@@ -118,8 +118,6 @@ class iNode
 {
 public:
 	unsigned fileSize;
-	//unsigned dirSize;
-	//char fileName[MAXIMUM_ABSOLUTE_FILENAME_LENGTH];
 	time_t inode_create_time;
 	time_t inode_access_time;
 	time_t inode_modify_time;
@@ -139,10 +137,6 @@ public:
 	std::string getCreateTime();
 	std::string getModifiedTime();
 	std::string getAccessTime();
-
-
-private:
-
 };
 
 class superBlock
@@ -170,31 +164,28 @@ public:
 	//unsigned blockBitmapStart;
 	unsigned inodeStart;
 	unsigned blockStart;
-
+    bool updateSuperBlock(FILE* = NULL);
 	Address freeptr;
 	
 	int allocateNewInode(unsigned, int, Address[], Address*, FILE* = NULL, bool=true);
 	bool freeInode(int, FILE* = NULL);
-	bool updateSuperBlock(FILE* = NULL);
-
 	iNode loadInode(short, FILE* = NULL);
 	bool writeInode(iNode, FILE* = NULL);
 };
 
 
 class DiskblockManager {
-private:
-	
+
 public:
 	Address freeptr;
-	void initialize(superBlock*,FILE* =NULL);  // initialize when the disk is created
-	Address alloc(FILE* =NULL);  // allocate a free block and return the free block address
-	void free(Address addr,FILE* =NULL);  // recycle the unused block and push it to the stack
-	void printBlockUsage(superBlock*, FILE* =NULL);
-	int getFreeBlock(FILE*);
-	int getFreeBlock(int);
-	int getLinkedListBlock(FILE*);
-	int getDedicateBlock(superBlock*,FILE*);
+	void initialize(superBlock*,FILE* =NULL);		// initialize when the disk is created
+	Address alloc(FILE* =NULL);						// allocate a free block and return the free block address
+	void free(Address addr,FILE* =NULL);			// recycle the unused block and push it to the stack
+	void printBlockUsage(superBlock*, FILE* =NULL);	// print disk block usage
+	int getFreeBlock(FILE*);						// get free block number
+	int getFreeBlock(int);							// get free block number from linked list block number
+	int getLinkedListBlock(FILE*);					// get number of blocks used for address linked list
+	int getDedicateBlock(superBlock*,FILE*);		// get dedicated block number
 };
 struct fileEntry {
 	char fileName[MAXIMUM_FILENAME_LENGTH];
