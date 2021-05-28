@@ -90,28 +90,26 @@ struct Address
 	}
 };
 
-class Diskblock {  // can get the content from or write the content to a specific disk block
+class Diskblock {  
+	// can get the content from or write the content to a specific disk block
 public:
-	unsigned char content[1024];
-	Diskblock() {
-		refreshContent();
-	}
+	unsigned char content[INITIAL_BLOCK_SIZE];
+	Diskblock() { refreshContent(); }
 	void refreshContent();
-	Diskblock(int addrInt); 
-	Diskblock(Address addr); 
-	void load(int addrInt,FILE* = NULL, int = 1024);// load a block from disk given an address to the content buffer
-	void load(Address addr, FILE* = NULL, int = 1024);// load a block from disk given an address to the content buffer
-	void write(int addrInt, FILE* = NULL, int = 1024);  // write the content buffer to the specific disk block
-	void write(Address addr, FILE* = NULL, int = 1024);  // write the content buffer to the specific disk block
+	Diskblock(int); 
+	Diskblock(Address); 
+	void load(int,FILE* = NULL, int = INITIAL_BLOCK_SIZE);			// load a block from disk given an address to the content buffer
+	void load(Address, FILE* = NULL, int = INITIAL_BLOCK_SIZE);		// load a block from disk given an address to the content buffer
+	void write(int, FILE* = NULL, int = INITIAL_BLOCK_SIZE);		// write the content buffer to the specific disk block
+	void write(Address, FILE* = NULL, int = INITIAL_BLOCK_SIZE);	// write the content buffer to the specific disk block
 
 };
 
 class IndirectDiskblock {
 public:
 	Address addrs[NUM_INDIRECT_ADDRESSES];  // addresses loaded from an indirect disk block
-	//int numAddress; // number of valid addresses since not all the 341 addr are used
-	void load(Address blockAddr,FILE* =NULL);  //load addresses given an indirect block address
-	void write(Address blockAddr,FILE* =NULL);  //write the pointers to the specific block
+	void load(Address,FILE* =NULL);			//load addresses given an indirect block address
+	void write(Address,FILE* =NULL);		//write the pointers to the specific block
 };
 
 class iNode
@@ -187,6 +185,7 @@ public:
 	int getLinkedListBlock(FILE*);					// get number of blocks used for address linked list
 	int getDedicateBlock(superBlock*,FILE*);		// get dedicated block number
 };
+
 struct fileEntry {
 	char fileName[MAXIMUM_FILENAME_LENGTH];
 	short inode_id;
@@ -196,8 +195,6 @@ struct fileEntry {
 
 struct Directory {
 	std::vector<fileEntry> files;
-	//unsigned fileCount;
-	//unsigned blockIndex;
 	short findInFileEntries(const char*);
 };
 
@@ -222,8 +219,10 @@ public:
 	Directory readFileEntriesFromDirectoryFile(iNode);
 	bool writeFileEntriesToDirectoryFile(Directory, iNode);
 	int createUnderInode(iNode&, const char*, int);
-	short applyChangesForNewDirectory(iNode);
-	short applyChangesForNewFile(iNode, unsigned);
+
+	short allocateResourceForNewDirectory(iNode);
+	short allocateResourceForNewFile(iNode, unsigned);
+	bool deleteFile(iNode);
 
 	int parentBlockRequired(iNode&);
 	bool freeBlockCheck(int);
@@ -241,7 +240,7 @@ public:
 	std::vector<std::string> stringSplit(const std::string&, const std::string&);
 	short locateInodeFromPath(std::string);
 	void recursiveDeleteDirectory(iNode);
-	bool deleteFile(iNode);
+	
 	unsigned getDirectorySize(iNode);
 	void printWelcomeInfo();
 	void printHelpInfo();

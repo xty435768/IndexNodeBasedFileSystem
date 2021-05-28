@@ -121,7 +121,7 @@ void Disk::parse(char* str)
 					if (!freeBlockCheck(parentRequired + newRequired)) return;
 					if (!freeInodeCheck()) return;
 
-					int newDirInodeId = applyChangesForNewDirectory(inode_ptr);
+					int newDirInodeId = allocateResourceForNewDirectory(inode_ptr);
 					inode_id_ptr = createUnderInode(inode_ptr, pathList[i].c_str(), newDirInodeId);
 				}
 				else {
@@ -132,7 +132,7 @@ void Disk::parse(char* str)
 					if (!freeBlockCheck(parentRequired + newRequired)) return;
 					if (!freeInodeCheck()) return;
 
-					int newFileInodeId = applyChangesForNewFile(inode_ptr, fileSize);
+					int newFileInodeId = allocateResourceForNewFile(inode_ptr, fileSize);
 					inode_id_ptr = createUnderInode(inode_ptr, pathList[i].c_str(), newFileInodeId);
 				}
 
@@ -200,7 +200,7 @@ void Disk::parse(char* str)
 				if (!freeBlockCheck(parentRequired + newRequired)) return;
 				if (!freeInodeCheck()) return;
 
-				int newDirInodeId = applyChangesForNewDirectory(inode_ptr);
+				int newDirInodeId = allocateResourceForNewDirectory(inode_ptr);
 				inode_id_ptr = createUnderInode(inode_ptr, pathList[i].c_str(), newDirInodeId);
 				if (inode_id_ptr == -1) {
 					printf("Create directory failed!\n");
@@ -401,8 +401,14 @@ void Disk::parse(char* str)
 		unsigned spaceForFiles = getDirectorySize(super.loadInode(0, diskFile));
 		unsigned spaceUsed = dbm.getDedicateBlock(&super, diskFile) * super.BLOCK_SIZE + spaceForFiles;
 		printf("\r");
-		printf("Space usage (Bytes): %d/%d (%.4f%%)\n", spaceUsed, super.TOTAL_SIZE, 100 * spaceUsed / (double)super.TOTAL_SIZE);
-		printf("Inode usage: %d/%d (%.4f%%)\n", super.inodeNumber - super.freeInodeNumber, super.inodeNumber, 100 * (super.inodeNumber - super.freeInodeNumber) / (double)super.inodeNumber);
+		printf("Space usage (Bytes): %d/%d (%.4f%%)\n", 
+			spaceUsed, 
+			super.TOTAL_SIZE, 
+			100 * spaceUsed / (double)super.TOTAL_SIZE);
+		printf("Inode usage: %d/%d (%.4f%%)\n", 
+			super.inodeNumber - super.freeInodeNumber, 
+			super.inodeNumber, 
+			100 * (super.inodeNumber - super.freeInodeNumber) / (double)super.inodeNumber);
 		dbm.printBlockUsage(&super, diskFile);
 	}
 	else if (!strcmp(command, "cat")) {
@@ -543,7 +549,8 @@ bool Disk::loadDisk()
 		cout << "Disk file found!" << endl;
 		if (fileSeek(file, 0, SEEK_SET)) return false;
 		char* magic_number_test = new char[sizeof(magic_number)];
-		if (fileRead(magic_number_test, sizeof(char), strlen(magic_number), file) != strlen(magic_number)) 
+		if (fileRead(magic_number_test, sizeof(char), 
+			strlen(magic_number), file) != strlen(magic_number)) 
 			return false;
 		magic_number_test[sizeof(magic_number) - 1] = '\0';
 		if (strcmp(magic_number_test, magic_number))
@@ -551,7 +558,8 @@ bool Disk::loadDisk()
 			cout << "Magic number error! Invalid file!!" << endl;
 			return false;
 		}
-		if (fileSeek(file, sizeof(magic_number) - 1, SEEK_SET)) return false;
+		if (fileSeek(file, sizeof(magic_number) - 1, SEEK_SET)) 
+			return false;
 		if (fileRead(&super, sizeof(superBlock), 1, file) != 1)
 		{
 			fclose(file);
@@ -599,8 +607,6 @@ void Disk::initializeRootDirectory()
 	for (int i = 0; i < root_dir.files.size(); i++)
 	{
 		memcpy(db.content + i * sizeof(fileEntry), &root_dir.files[i], sizeof(fileEntry));
-		//fileSeek(diskFile, rootDirectoryFile.to_int() + i * sizeof(fileEntry), SEEK_SET);
-		//fileWrite(&(root_dir.files[i]), sizeof(fileEntry), 1, diskFile);
 	}
 	db.write(rootDirectoryFile);
 	Address directAddresses[1] = { rootDirectoryFile };
@@ -700,7 +706,8 @@ Directory Disk::readFileEntriesFromDirectoryFile(iNode inode)
 				d.files.push_back(fe);
 			}
 		}
-		int lastRemainingEntriesNumber = (remainingFileSize % super.BLOCK_SIZE) / sizeof(fileEntry);
+		int lastRemainingEntriesNumber = 
+			(remainingFileSize % super.BLOCK_SIZE) / sizeof(fileEntry);
 		db.load(idb.addrs[remainingFullBlocks],diskFile);
 		for (size_t i = 0; i < lastRemainingEntriesNumber; i++)
 		{
@@ -774,11 +781,6 @@ int Disk::createUnderInode(iNode& parent, const char* name, int newInode)
 	3、一开始占用直接块，但加了之后需要申请间接块
 	4、占用间接块，不需要申请新块
 	5、占用间接块，需要申请新块*/
-	//if (super.freeInodeNumber == 0)
-	//{
-	//	printf("No free index-node left!\n");
-	//	return -1;
-	//}
 	if (parent.fileSize == MAXIMUM_FILE_SIZE) {
 		printf("This directory has reached its maximum size!\n");
 		return -1;
@@ -888,7 +890,7 @@ int Disk::createUnderInode(iNode& parent, const char* name, int newInode)
 	return newInode;
 }
 
-short Disk::applyChangesForNewDirectory(iNode parent)
+short Disk::allocateResourceForNewDirectory(iNode parent)
 {
 	// return: new inode id for new directory
 	Address newBlockForNewDirectory = allocateNewBlock(diskFile);
@@ -907,7 +909,7 @@ short Disk::applyChangesForNewDirectory(iNode parent)
 	return newInodeForNewDirectory;
 }
 
-short Disk::applyChangesForNewFile(iNode parent, unsigned fileSize)
+short Disk::allocateResourceForNewFile(iNode parent, unsigned fileSize)
 {
 	// return new inode id for new file
 	int blockRequired = ceil(fileSize / (double)super.BLOCK_SIZE);
@@ -1072,7 +1074,7 @@ bool Disk::copy(iNode& source, const char* name, iNode& target){
 
 
 	
-	int newDirId = applyChangesForNewDirectory(target); // create directory in the target directory
+	int newDirId = allocateResourceForNewDirectory(target); // create directory in the target directory
 	newDirId = createUnderInode(target, name, newDirId);
 
 	iNode newDir = super.loadInode(newDirId, diskFile);
@@ -1139,8 +1141,6 @@ short Disk::copyFile(iNode& source, iNode& target)
 void Disk::listDirectory(iNode directory_inode)
 {
 	Directory dir = readFileEntriesFromDirectoryFile(directory_inode);
-	//printf("\nCurrent working directory: ");
-	//printCurrentDirectory();
 	printf("\nFile(s) and directory(s) of %s :\n",getFullFilePath(directory_inode).c_str());
 	printf("\nFile Name\tFile Size\tFile Type\tCreate Time\t\t\tModified Time\t\t\tInode ID\n");
 	iNode in;
@@ -1154,13 +1154,18 @@ void Disk::listDirectory(iNode directory_inode)
 		{
 			if (j == 0)
 			{
-				printf("%s%s%d B\t\t%s\t\t%s\t%s\t%d\n", fileName.substr(0,14).c_str(), (fileName.size() >= 8 ? "\t" : "\t\t"), in.fileSize, (in.isDir?"Dir":"File"), in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
+				printf("%s%s%d B\t\t%s\t\t%s\t%s\t%d\n", 
+					fileName.substr(0,14).c_str(), 
+					(fileName.size() >= 8 ? "\t" : "\t\t"), 
+					in.fileSize, (in.isDir?"Dir":"File"), 
+					in.getCreateTime().c_str(), 
+					in.getModifiedTime().c_str(), 
+					in.inode_id);
 			}
 			else {
 				printf("%s\n", fileName.substr(j * 14, 14).c_str());
 			}
 		}
-		//printf("%s%s%d\t\t\t%s\t%s\t%d\n", c, (strlen(c) >= 8 ? "\t" : "\t\t"), in.fileSize, in.getCreateTime().c_str(), in.getModifiedTime().c_str(), in.inode_id);
 	}
 	printf("\n");
 }
@@ -1248,7 +1253,8 @@ short Disk::locateInodeFromPath(std::string path)
 	{
 		iNode inode_ptr = super.loadInode(inode_id_ptr, diskFile);
 		if (!inode_ptr.isDir) {
-			printf("%s is a file! Please check your path again!\n", getFileName(inode_ptr).c_str());
+			printf("%s is a file! Please check your path again!\n", 
+				getFileName(inode_ptr).c_str());
 			return -1;
 		}
 		Directory dir = readFileEntriesFromDirectoryFile(inode_ptr);
@@ -1268,7 +1274,8 @@ void Disk::recursiveDeleteDirectory(iNode inode)
 {
 	if (inode.fileSize == 2 * sizeof(fileEntry)) {
 		string filePath = getFullFilePath(inode);
-		printf("Directory deleted %s: %s\n", (deleteFile(inode) ? "successful" : "failed"), filePath.c_str());
+		printf("Directory deleted %s: %s\n", 
+			(deleteFile(inode) ? "successful" : "failed"), filePath.c_str());
 		return;
 	}
 	Directory dir = readFileEntriesFromDirectoryFile(inode);
@@ -1282,11 +1289,13 @@ void Disk::recursiveDeleteDirectory(iNode inode)
 		}
 		else {
 			string filePath = getFullFilePath(current_inode_ptr);
-			printf("File deleted %s: %s\n", (deleteFile(current_inode_ptr) ? "successful" : "failed"), filePath.c_str());
+			printf("File deleted %s: %s\n", 
+				(deleteFile(current_inode_ptr) ? "successful" : "failed"), filePath.c_str());
 		}
 	}
 	string filePath = getFullFilePath(inode);
-	printf("Directory deleted %s: %s\n", (deleteFile(inode) ? "successful" : "failed"), filePath.c_str());
+	printf("Directory deleted %s: %s\n", 
+		(deleteFile(inode) ? "successful" : "failed"), filePath.c_str());
 	return;
 }
 
@@ -1353,9 +1362,7 @@ bool Disk::deleteFile(iNode inode)
 unsigned Disk::getDirectorySize(iNode current)
 {
 	if ((current.isDir && current.fileSize == 2 * sizeof(fileEntry)) || !current.isDir)
-	{
 		return current.fileSize;
-	}
 	Directory dir = readFileEntriesFromDirectoryFile(current);
 	unsigned sum = current.fileSize;
 	for (size_t i = 0; i < dir.files.size(); i++)
@@ -1428,14 +1435,9 @@ superBlock::superBlock()
 	freeDataBlockNumber = INITIAL_DATA_BLOCK_NUMBER;
 	BLOCK_SIZE = INITIAL_BLOCK_SIZE;
 	INODE_SIZE = INITIAL_INODE_SIZE;
-	//super.SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE - sizeof(magic_number) + 1;
 	SUPERBLOCK_SIZE = INITIAL_BLOCK_SIZE;
 	superBlockStart = sizeof(magic_number) - 1;
 	TOTAL_SIZE = INITIAL_DISK_SIZE;
-	//super.inodeBitmapStart = super.superBlockStart + super.SUPERBLOCK_SIZE;
-	//super.blockBitmapStart = super.inodeBitmapStart + (BITMAP_RESERVE_BITS + INITIAL_INODE_NUMBER) / 8;
-	//super.inodeStart = super.blockBitmapStart + super.dataBlockNumber / 8;
-	
 	inodeStart = INITIAL_SUPERBLOCK_SIZE;
 	blockStart = inodeStart + inodeNumber * INITIAL_INODE_SIZE;
 	memset(inodeMap, 0, sizeof(inodeMap));
@@ -1652,25 +1654,32 @@ Address DiskblockManager::alloc(FILE* file)
 	Address blockAddr = freeptr.block_addr();
 	iblock.load(blockAddr,file);
 
-	// no free blocks
 	if (freeptr.offset().to_int() == 0) {
-		//perror("out of disk memory");
-		//exit(1);
-		printf("out of disk memory!\n");
-		return Address(0);
-	}
-	Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
-	iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
-	if (freeptr.offset().to_int() == 3) {
-		freeptr = iblock.addrs[0] + (NUM_INDIRECT_ADDRESSES - 1) * 3;
+		Address preBlockAddr = iblock.addrs[0];
+		// no free block
+		if (preBlockAddr == blockAddr) {
+			printf("out of disk memory!\n");
+			return Address(0);
+		}
 		memset(iblock.addrs, 0, sizeof iblock.addrs);
-		iblock.write(blockAddr,file);
+		iblock.write(blockAddr, file);
+		iblock.load(preBlockAddr, file);
+		freeptr = preBlockAddr + (NUM_INDIRECT_ADDRESSES - 1) * 3;
+		Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
+		iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
+		freeptr = freeptr - 3;
+		iblock.write(preBlockAddr, file);
+
+		return freeAddr;
 	}
 	else {
-		iblock.write(blockAddr,file);
+		Address freeAddr = iblock.addrs[freeptr.offset().to_int() / 3];
+		iblock.addrs[freeptr.offset().to_int() / 3].from_int(0);
 		freeptr = freeptr - 3;
+		iblock.write(blockAddr, file);
+
+		return freeAddr;
 	}
-	return freeAddr;
 }
 
 void DiskblockManager::free(Address freeAddr, FILE* file)  // addr is the freed or afterused block address
@@ -1702,23 +1711,28 @@ void DiskblockManager::printBlockUsage(superBlock* super,FILE* file)
 {
 	int linkedListBlock = getLinkedListBlock(file);
 	int freeBlock = getFreeBlock(linkedListBlock);
-	printf("Block usage: %d/%d (%.4f%%)\n", super->TOTAL_SIZE / super->BLOCK_SIZE - freeBlock, super->TOTAL_SIZE / super->BLOCK_SIZE, 100 * (super->TOTAL_SIZE / super->BLOCK_SIZE - freeBlock) / (double)(super->TOTAL_SIZE / super->BLOCK_SIZE));
+	printf("Block usage: %d/%d (%.4f%%)\n", 
+		super->TOTAL_SIZE / super->BLOCK_SIZE - freeBlock, 
+		super->TOTAL_SIZE / super->BLOCK_SIZE, 
+		100 * (super->TOTAL_SIZE / super->BLOCK_SIZE - freeBlock) / 
+		(double)(super->TOTAL_SIZE / super->BLOCK_SIZE));
 	cout << "blocks for linked list: " << linkedListBlock << endl;
-	cout << "blocks used for data: " << (super->TOTAL_SIZE - super->SUPERBLOCK_SIZE - super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE
+	cout << "blocks used for data: " << 
+		(super->TOTAL_SIZE - super->SUPERBLOCK_SIZE - super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE
 		- freeBlock - linkedListBlock << endl;
 	cout << "blocks used for Inodes: " << (super->INODE_SIZE * super->inodeNumber) / super->BLOCK_SIZE << endl;
 	cout << "blocks used for superblock: " << super->SUPERBLOCK_SIZE / super->BLOCK_SIZE << endl;
 }
-
+int DiskblockManager::getFreeBlock(int linkedListBlock)
+{
+	return (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;
+}
 int DiskblockManager::getFreeBlock(FILE* file)
 {
 	return (getLinkedListBlock(file) - 1) * 339 + freeptr.offset().to_int() / 3;
 }
 
-int DiskblockManager::getFreeBlock(int linkedListBlock)
-{
-	return (linkedListBlock - 1) * 339 + freeptr.offset().to_int() / 3;
-}
+
 
 int DiskblockManager::getLinkedListBlock(FILE* file)
 {
